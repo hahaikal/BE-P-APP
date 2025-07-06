@@ -1,0 +1,14 @@
+artifact_uri: file:///F:/Project/p_app_backend/mlruns/0/cdc1ff7e226b4715bf8af977d44a9516/artifacts
+end_time: 1751790540868
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: cdc1ff7e226b4715bf8af977d44a9516
+run_name: skillful-ox-267
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1751790534974
+status: 3
+tags: []
+user_id: MSI

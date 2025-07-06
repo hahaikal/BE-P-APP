@@ -5,3 +5,7 @@ psycopg2-binary
 python-dotenv
 celery
 redis
+scikit-learn
+pandas
+mlflow
+fastapi-cache2[redis]

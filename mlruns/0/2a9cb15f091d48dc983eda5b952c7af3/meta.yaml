@@ -1,0 +1,14 @@
+artifact_uri: file:///F:/Project/p_app_backend/mlruns/0/2a9cb15f091d48dc983eda5b952c7af3/artifacts
+end_time: 1751791561302
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 2a9cb15f091d48dc983eda5b952c7af3
+run_name: nebulous-sloth-260
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1751791556596
+status: 3
+tags: []
+user_id: MSI

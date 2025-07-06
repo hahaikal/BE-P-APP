@@ -1,0 +1,46 @@
+artifact_path: file:///F:/Project/p_app_backend/mlruns/0/models/m-eaf0336e87884e30b3c2769cdcf687eb/artifacts
+env_vars:
+- THE_ODDS_API_KEY
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.13.3
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.7.0
+is_signature_from_type_hint: false
+mlflow_version: 3.1.1
+model_id: m-eaf0336e87884e30b3c2769cdcf687eb
+model_size_bytes: 2597
+model_uuid: m-eaf0336e87884e30b3c2769cdcf687eb
+prompts: null
+run_id: 2a9cb15f091d48dc983eda5b952c7af3
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "double", "name": "odds_away_5", "required": true}, {"type":
+    "double", "name": "odds_away_20", "required": true}, {"type": "double", "name":
+    "odds_away_60", "required": true}, {"type": "double", "name": "odds_draw_5", "required":
+    true}, {"type": "double", "name": "odds_draw_20", "required": true}, {"type":
+    "double", "name": "odds_draw_60", "required": true}, {"type": "double", "name":
+    "odds_home_5", "required": true}, {"type": "double", "name": "odds_home_20", "required":
+    true}, {"type": "double", "name": "odds_home_60", "required": true}, {"type":
+    "double", "name": "delta_home_60_20", "required": true}, {"type": "double", "name":
+    "delta_home_20_5", "required": true}, {"type": "double", "name": "volatility_home",
+    "required": true}, {"type": "double", "name": "prob_home", "required": true},
+    {"type": "double", "name": "prob_draw", "required": true}, {"type": "double",
+    "name": "prob_away", "required": true}]'
+  outputs: '[{"type": "long", "required": true}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2025-07-06 08:45:56.790345'
