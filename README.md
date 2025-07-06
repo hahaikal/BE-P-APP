@@ -10,4 +10,8 @@ celery -A worker.celery_app beat --loglevel=info
 **model train**
 python train_model.py
 
-redis-cli ping
+**run redis**
+docker run -d --name redis-p-app -p 6379:6379 redis
+
+**testing redis**
+docker exec redis-p-app redis-cli ping
