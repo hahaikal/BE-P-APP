@@ -10,7 +10,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, Base
 from .routers import matches
+from . import model # <-- Pastikan 'model' diimpor
 
+# --- PERINTAH PEMBUATAN TABEL ---
+# Baris ini akan membuat tabel 'matches' dan 'odds_snapshots' secara otomatis
+# di dalam database jika belum ada, setiap kali layanan API dimulai.
+model.Base.metadata.create_all(bind=engine)
+# --- SELESAI ---
+
+# Memuat artefak model ML
 model = joblib.load("trained_model.joblib")
 encoder = joblib.load("label_encoder.joblib")
 feature_columns = joblib.load("feature_columns.joblib")
@@ -50,6 +58,7 @@ def health_check():
     """
     return {"status": "ok", "message": "P-APP Backend service is up and running"}
 
+# Menyimpan model dan artefak lain di state aplikasi agar bisa diakses dari router
 app.state.model = model
 app.state.encoder = encoder
 app.state.feature_columns = feature_columns
