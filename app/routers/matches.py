@@ -2,22 +2,26 @@ from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+# Import dari modul lokal
 from .. import crud, schemas
 from ..database import get_db
 
-router = APIRouter()
+# Definisikan router
+router = APIRouter(
+    tags=["Matches"] # Menambahkan tag untuk dokumentasi API
+)
 
-
-@router.get("", response_model=List[schemas.Match]) # UBAH MatchSchema menjadi Match
+# Endpoint untuk mendapatkan semua pertandingan
+@router.get("/matches", response_model=List[schemas.Match])
 def read_matches(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """
-    Mengambil daftar pertandingan yang akan datang.
+    Mengambil daftar pertandingan dari database.
     """
     matches = crud.get_matches(db, skip=skip, limit=limit)
     return matches
 
 
-@router.get("/{match_id}/prediction", response_model=schemas.PredictionOutput)
+@router.get("/matches/{match_id}/prediction", response_model=schemas.PredictionOutput) # <-- PERUBAHAN DI SINI
 def get_match_prediction(match_id: int, db: Session = Depends(get_db)):
     """
     Mengambil prediksi untuk satu pertandingan.
