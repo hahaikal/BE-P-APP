@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: p_app_postgres
+    environment:
+      - POSTGRES_USER=p_app_user
+      - POSTGRES_PASSWORD=p_app_password
+      - POSTGRES_DB=p_app_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: p_app_redis
+
+  api:
+    build: .
+    container_name: p_app_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    user: "appuser" # Jalankan sebagai user non-root
+    environment:
+      - DATABASE_URL=postgresql://p_app_user:p_app_password@postgres/p_app_db
+      - CELERY_BROKER_URL=redis://redis:6379/0 # Hubungkan ke service 'redis'
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0 # Hubungkan ke service 'redis'
+      - THE_ODDS_API_KEY=${THE_ODDS_API_KEY}
+
+  worker:
+    build: .
+    container_name: p_app_worker
+    command: celery -A app.tasks worker --loglevel=info
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    user: "appuser" # Jalankan sebagai user non-root
+    environment:
+      - DATABASE_URL=postgresql://p_app_user:p_app_password@postgres/p_app_db
+      - CELERY_BROKER_URL=redis://redis:6379/0 # Hubungkan ke service 'redis'
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0 # Hubungkan ke service 'redis'
+      - THE_ODDS_API_KEY=${THE_ODDS_API_KEY}
+
+  beat:
+    build: .
+    container_name: p_app_beat
+    command: celery -A app.tasks beat --loglevel=info
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    user: "appuser" # Jalankan sebagai user non-root
+    environment:
+      - DATABASE_URL=postgresql://p_app_user:p_app_password@postgres/p_app_db
+      - CELERY_BROKER_URL=redis://redis:6379/0 # Hubungkan ke service 'redis'
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0 # Hubungkan ke service 'redis'
+      - THE_ODDS_API_KEY=${THE_ODDS_API_KEY}
+
+volumes:
+  postgres_data:

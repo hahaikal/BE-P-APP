@@ -1,21 +1,49 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from datetime import datetime
+from typing import Optional
 
-class PredictionSchema(BaseModel):
-    home_win_percentage: float
-    draw_percentage: float
-    away_win_percentage: float
+# --- OddsSnapshot Schemas ---
+class OddsSnapshotBase(BaseModel):
+    bookmaker: str
+    price_home: float
+    price_draw: float
+    price_away: float
 
-class MatchSchema(BaseModel):
+class OddsSnapshotCreate(OddsSnapshotBase):
+    timestamp: datetime
+
+class OddsSnapshot(OddsSnapshotBase):
     id: int
-    league: str
-    # 'Field(alias=...)' digunakan agar di JSON namanya 'match_time'
-    # tapi di kode Python kita tetap bisa pakai 'kickoff_time'
-    match_time: datetime = Field(alias="kickoff_time")
-    home_team: str
-    away_team: str
-    prediction: PredictionSchema
+    match_id: int
+    timestamp: datetime
 
     class Config:
-        from_attributes = True 
-        populate_by_name = True 
+        from_attributes = True
+
+# --- Match Schemas ---
+class MatchBase(BaseModel):
+    api_id: str
+    sport_key: str
+    home_team: str
+    away_team: str
+    commence_time: datetime
+    result_home_score: Optional[int] = None
+    result_away_score: Optional[int] = None
+
+class MatchCreate(MatchBase):
+    pass
+
+class Match(MatchBase):
+    id: int
+    odds_snapshots: list[OddsSnapshot] = []
+
+    class Config:
+        from_attributes = True
+
+# --- Prediction Schemas ---
+class PredictionOutput(BaseModel):
+    match_id: int
+    home_team: str
+    away_team: str
+    prediction: str
+    probabilities: dict[str, float]
