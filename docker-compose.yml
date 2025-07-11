@@ -41,6 +41,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://p_app_user:p_app_password@postgres/p_app_db
       - REDIS_URL=redis://redis:6379/0
+      - TZ=Asia/Jakarta
 
   worker:
     build: .
@@ -57,6 +58,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - THE_ODDS_API_KEY=${THE_ODDS_API_KEY}
+      - TZ=Asia/Jakarta
 
   beat:
     build: .
@@ -73,6 +75,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - THE_ODDS_API_KEY=${THE_ODDS_API_KEY}
+      - TZ=Asia/Jakarta
 
 volumes:
   postgres_data:
