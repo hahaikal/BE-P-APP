@@ -9,9 +9,14 @@ services:
       - POSTGRES_PASSWORD=p_app_password
       - POSTGRES_DB=p_app_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "p_app_user", "-d", "p_app_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
