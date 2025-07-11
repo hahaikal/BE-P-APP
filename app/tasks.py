@@ -10,9 +10,9 @@ from .database import SessionLocal
 BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 BACKEND_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 
-celery_app = Celery("tasks", broker=BROKER_URL, backend=BACKEND_URL)
+celery = Celery("tasks", broker=BROKER_URL, backend=BACKEND_URL)
 
-@celery_app.task
+@celery.task
 def record_odds_snapshot(match_db_id: int, match_api_id: str):
     """
     Task untuk mengambil dan merekam satu snapshot odds untuk sebuah pertandingan.
@@ -52,7 +52,7 @@ def record_odds_snapshot(match_db_id: int, match_api_id: str):
     finally:
         db.close()
 
-@celery_app.task
+@celery.task
 def discover_new_matches():
     """
     Task untuk mencari pertandingan baru, menyimpannya, dan menjadwalkan pengambilan odds.
@@ -99,8 +99,8 @@ def discover_new_matches():
     finally:
         db.close()
 
-@celery_app.on_after_configure.connect
-@celery_app.on_after_configure.connect
+@celery.on_after_configure.connect
+@celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
     sender.add_periodic_task(
         crontab(hour='*/2', minute='0'), 
