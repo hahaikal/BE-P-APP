@@ -8,9 +8,9 @@ from typing import Optional, List, Dict
 
 class OddsSnapshotBase(BaseModel):
     bookmaker: str
-    home_team_odds: float
-    away_team_odds: float
-    draw_odds: float
+    price_home: float
+    price_away: float
+    price_draw: float
 
 class OddsSnapshotCreate(OddsSnapshotBase):
     pass

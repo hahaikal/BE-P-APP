@@ -12,4 +12,7 @@ celery -A app.tasks.celery_app worker --loglevel=info
 celery -A app.tasks.celery_app beat --loglevel=info
 
 **mengambil data matches manual**
-docker compose exec celery_worker celery -A app.main.celery call app.tasks.fetch_and_process_matches
+docker compose exec worker celery -A app.tasks call app.tasks.discover_new_matches
+
+**mengambil data odds manual**
+docker compose exec worker celery -A app.tasks call app.tasks.record_odds_snapshot --args='[id, "api_id"]'

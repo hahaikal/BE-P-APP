@@ -37,6 +37,8 @@ def record_odds_snapshot(match_db_id: int, match_api_id: str):
             price_away = next((o['price'] for o in outcomes if o['name'] == match_odds_data["away_team"]), 0)
             price_draw = next((o['price'] for o in outcomes if o['name'] == "Draw"), 0)
 
+            print(f"DEBUG: home_team_odds={price_home}, draw_odds={price_draw}, away_team_odds={price_away}")
+
             snapshot_schema = schemas.OddsSnapshotCreate(
                 bookmaker=bookmaker["key"],
                 price_home=price_home,
