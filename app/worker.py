@@ -35,39 +35,57 @@ def fetch_upcoming_matches():
 
 def fetch_odds_for_match(match_api_id: str, sport_key: str):
     """
-    Mengambil data odds untuk satu pertandingan SPESIFIK menggunakan
-    endpoint dan parameter yang BENAR.
+    Mengambil data odds untuk satu pertandingan SPESIFIK.
     """
     logger.info(f"Mencoba mengambil odds untuk match_api_id: {match_api_id}")
     try:
-        # ===== INI ADALAH PERBAIKAN UTAMA =====
-        # Endpoint yang benar adalah /odds, BUKAN /events/{id}/odds
         api_url = f"{ODDS_API_BASE_URL}/v4/sports/{sport_key}/odds"
-
-        # Event ID sekarang menjadi parameter, bukan bagian dari URL
         params = {
             "apiKey": THE_ODDS_API_KEY,
             "regions": "eu",
             "markets": "h2h",
             "oddsFormat": "decimal",
             "dateFormat": "iso",
-            "eventIds": match_api_id, # <-- Ini cara yang benar
+            "eventIds": match_api_id,
         }
-        # =======================================
-
         response = requests.get(api_url, params=params, timeout=30)
         response.raise_for_status()
-
         data = response.json()
         if data:
-            # API mengembalikan list, jadi kita ambil elemen pertamanya
             return data[0]
-        logger.warning(f"Respons API kosong untuk match_api_id: {match_api_id}")
+        logger.warning(f"Respons API kosong untuk odds match_api_id: {match_api_id}")
         return None
-
     except requests.exceptions.HTTPError as e:
         logger.error(f"HTTP Error saat mengambil odds untuk {match_api_id}: {e.response.status_code}")
         return None
     except Exception as e:
         logger.error(f"Error umum saat mengambil odds untuk {match_api_id}: {e}", exc_info=True)
+        return None
+
+# ======================================================================
+# FUNGSI BARU DITAMBAHKAN DI SINI
+# ======================================================================
+def fetch_score_for_match(match_api_id: str, sport_key: str):
+    """Mengambil data skor untuk satu pertandingan yang sudah selesai."""
+    logger.info(f"Mencari skor untuk match_api_id: {match_api_id}")
+    try:
+        # Kita gunakan endpoint /scores untuk mendapatkan hasil
+        api_url = f"{ODDS_API_BASE_URL}/v4/sports/{sport_key}/scores"
+        params = {
+            "apiKey": THE_ODDS_API_KEY,
+            "eventIds": match_api_id
+        }
+        response = requests.get(api_url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Jika ada data dan ada skor, kembalikan data pertandingan tersebut
+        if data and data[0].get('scores'):
+            logger.info(f"Skor ditemukan untuk {match_api_id}.")
+            return data[0]
+            
+        logger.warning(f"Tidak ada skor dalam respons untuk {match_api_id}.")
+        return None
+    except Exception as e:
+        logger.error(f"Gagal mengambil skor untuk {match_api_id}: {e}")
         return None
