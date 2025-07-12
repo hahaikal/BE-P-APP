@@ -1,68 +1,73 @@
-import requests # Ganti httpx dengan requests
 import os
-from dotenv import load_dotenv
-import traceback
+import requests
+import logging
 
-# Muat environment variables dari .env
-load_dotenv()
-
+# Konfigurasi dasar
 THE_ODDS_API_KEY = os.getenv("THE_ODDS_API_KEY")
 ODDS_API_BASE_URL = "https://api.the-odds-api.com"
-SPORT = "soccer_epl"
-REGIONS = "eu"
-MARKETS = "h2h"
-ODDS_FORMAT = "decimal"
-DATE_FORMAT = "iso"
 
-def fetch_upcoming_matches(): # Hapus async
+# Konfigurasi logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Fungsi ini tidak kita gunakan lagi untuk mencari pertandingan,
+# tetapi biarkan saja untuk referensi atau penggunaan di masa depan.
+def fetch_upcoming_matches():
     """
     Mengambil jadwal pertandingan yang akan datang dari The Odds API menggunakan requests.
     """
     if not THE_ODDS_API_KEY:
-        print("Error: THE_ODDS_API_KEY tidak ditemukan.")
+        logger.error("Error: THE_ODDS_API_KEY tidak ditemukan.")
         return []
 
-    url = f"{ODDS_API_BASE_URL}/v4/sports/{SPORT}/scores"
+    url = f"{ODDS_API_BASE_URL}/v4/sports/soccer_epl/scores"
     params = {"apiKey": THE_ODDS_API_KEY, "daysFrom": "3"}
-    
+
     try:
-        # Gunakan requests.get dengan timeout
         response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status() # Akan raise exception untuk status code 4xx atau 5xx
-        print("✅ Berhasil mengambil data jadwal pertandingan.")
+        response.raise_for_status()
+        logger.info("✅ Berhasil mengambil data jadwal pertandingan.")
         return response.json()
     except requests.exceptions.RequestException as e:
-        print("==================== TRACEBACK ERROR (requests) ====================")
-        traceback.print_exc()
-        print("====================================================================")
+        logger.error(f"Error saat mengambil jadwal pertandingan: {e}")
     return []
 
 
-def fetch_odds_for_match(event_id: str): # Hapus async
+def fetch_odds_for_match(match_api_id: str, sport_key: str):
     """
-    Mengambil data odds untuk satu pertandingan spesifik menggunakan requests.
+    Mengambil data odds untuk satu pertandingan SPESIFIK menggunakan
+    endpoint dan parameter yang BENAR.
     """
-    if not THE_ODDS_API_KEY:
-        print("Error: THE_ODDS_API_KEY tidak ditemukan.")
+    logger.info(f"Mencoba mengambil odds untuk match_api_id: {match_api_id}")
+    try:
+        # ===== INI ADALAH PERBAIKAN UTAMA =====
+        # Endpoint yang benar adalah /odds, BUKAN /events/{id}/odds
+        api_url = f"{ODDS_API_BASE_URL}/v4/sports/{sport_key}/odds"
+
+        # Event ID sekarang menjadi parameter, bukan bagian dari URL
+        params = {
+            "apiKey": THE_ODDS_API_KEY,
+            "regions": "eu",
+            "markets": "h2h",
+            "oddsFormat": "decimal",
+            "dateFormat": "iso",
+            "eventIds": match_api_id, # <-- Ini cara yang benar
+        }
+        # =======================================
+
+        response = requests.get(api_url, params=params, timeout=30)
+        response.raise_for_status()
+
+        data = response.json()
+        if data:
+            # API mengembalikan list, jadi kita ambil elemen pertamanya
+            return data[0]
+        logger.warning(f"Respons API kosong untuk match_api_id: {match_api_id}")
         return None
 
-    url = f"{ODDS_API_BASE_URL}/v4/sports/{SPORT}/events/{event_id}/odds"
-    params = {
-        "apiKey": THE_ODDS_API_KEY,
-        "regions": REGIONS,
-        "markets": MARKETS,
-        "oddsFormat": ODDS_FORMAT,
-        "dateFormat": DATE_FORMAT,
-    }
-
-    try:
-        # Gunakan requests.get dengan timeout
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        print(f"✅ Berhasil mengambil data odds untuk event {event_id}.")
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"============== TRACEBACK ERROR (Odds for {event_id}) ==============")
-        traceback.print_exc()
-        print("==================================================================================")
-    return None
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"HTTP Error saat mengambil odds untuk {match_api_id}: {e.response.status_code}")
+        return None
+    except Exception as e:
+        logger.error(f"Error umum saat mengambil odds untuk {match_api_id}: {e}", exc_info=True)
+        return None
