@@ -48,10 +48,10 @@ TARGET_LEAGUES = [
 def record_odds_snapshot(match_db_id: int):
     """
     Task untuk mengambil dan merekam satu snapshot odds untuk sebuah pertandingan.
+    Hanya menerima satu argumen: ID dari database kita.
     """
     db = SessionLocal()
     try:
-        # Langkah 1: Ambil data pertandingan dari DB untuk mendapatkan detailnya
         match = db.query(model.Match).filter(model.Match.id == match_db_id).first()
         if not match:
             logger.error(f"Match dengan ID database {match_db_id} tidak ditemukan.")
@@ -59,10 +59,8 @@ def record_odds_snapshot(match_db_id: int):
 
         logger.info(f"Mulai merekam odds untuk match: {match.home_team} vs {match.away_team} (api_id: {match.api_id})")
 
-        # Langkah 2: Panggil worker dengan DUA argumen: api_id dan sport_key
         match_odds_data = worker.fetch_odds_for_match(match.api_id, match.sport_key)
 
-        # Langkah 3: Proses data seperti biasa
         if not match_odds_data or not match_odds_data.get("bookmakers"):
             logger.warning(f"Tidak ada data odds atau bookmakers ditemukan untuk match api_id: {match.api_id}")
             return
@@ -96,8 +94,7 @@ def record_odds_snapshot(match_db_id: int):
 @celery.task
 def discover_new_matches():
     """
-    Mencari pertandingan dari liga target, mengambil semua data yang tersedia,
-    lalu memfilternya secara manual berdasarkan waktu di dalam kode.
+    Mencari pertandingan baru dari liga target.
     """
     logger.warning("Mulai mencari pertandingan baru...")
     db = SessionLocal()
@@ -105,7 +102,6 @@ def discover_new_matches():
         for league_key in TARGET_LEAGUES:
             try:
                 logger.info(f"Memeriksa liga: {league_key}")
-
                 api_url = f"{worker.ODDS_API_BASE_URL}/v4/sports/{league_key}/events"
                 params = {"apiKey": worker.THE_ODDS_API_KEY, "dateFormat": "iso"}
 
@@ -116,8 +112,6 @@ def discover_new_matches():
                 if not matches_data:
                     logger.info(f"Tidak ada jadwal pertandingan ditemukan dari API untuk {league_key}.")
                     continue
-
-                logger.info(f"Diterima {len(matches_data)} pertandingan dari API untuk {league_key}.")
 
                 for match_data in matches_data:
                     existing_match = crud.get_match_by_api_id(db, api_id=match_data['id'])
@@ -143,7 +137,7 @@ def discover_new_matches():
                         for exec_time in snapshot_times:
                             if exec_time > datetime.now(timezone.utc):
                                 record_odds_snapshot.apply_async(
-                                    args=[new_match.id],
+                                    args=[new_match.id], # Hanya kirim satu argumen
                                     eta=exec_time
                                 )
                                 logger.info(f"Menjadwalkan snapshot untuk match_id {new_match.id} pada {exec_time.isoformat()}")
