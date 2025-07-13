@@ -62,30 +62,32 @@ def fetch_odds_for_match(match_api_id: str, sport_key: str):
         logger.error(f"Error umum saat mengambil odds untuk {match_api_id}: {e}", exc_info=True)
         return None
 
-# ======================================================================
-# FUNGSI BARU DITAMBAHKAN DI SINI
-# ======================================================================
-def fetch_score_for_match(match_api_id: str, sport_key: str):
-    """Mengambil data skor untuk satu pertandingan yang sudah selesai."""
+def fetch_score_for_match(match_api_id: str):
+    """
+    Mengambil data skor untuk satu pertandingan yang sudah selesai
+    menggunakan endpoint /scores.
+    """
     logger.info(f"Mencari skor untuk match_api_id: {match_api_id}")
     try:
-        # Kita gunakan endpoint /scores untuk mendapatkan hasil
-        api_url = f"{ODDS_API_BASE_URL}/v4/sports/{sport_key}/scores"
+        api_url = f"{ODDS_API_BASE_URL}/v4/sports/soccer/scores"
         params = {
             "apiKey": THE_ODDS_API_KEY,
             "eventIds": match_api_id
         }
+        
         response = requests.get(api_url, params=params, timeout=30)
         response.raise_for_status()
         data = response.json()
-        
-        # Jika ada data dan ada skor, kembalikan data pertandingan tersebut
-        if data and data[0].get('scores'):
-            logger.info(f"Skor ditemukan untuk {match_api_id}.")
+
+        if data and data[0].get('completed', False) and data[0].get('scores'):
             return data[0]
             
-        logger.warning(f"Tidak ada skor dalam respons untuk {match_api_id}.")
+        logger.info(f"Skor belum tersedia atau match {match_api_id} belum selesai.")
+        return None
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Gagal menghubungi API skor untuk {match_api_id}: {e}")
         return None
     except Exception as e:
-        logger.error(f"Gagal mengambil skor untuk {match_api_id}: {e}")
+        logger.error(f"Error tidak terduga saat mengambil skor untuk {match_api_id}: {e}", exc_info=True)
         return None

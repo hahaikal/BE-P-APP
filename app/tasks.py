@@ -6,20 +6,16 @@ from celery import Celery
 from celery.schedules import crontab
 import pytz
 
-# Import modul lokal
 from . import worker, crud, schemas, model
 from .database import SessionLocal
 
-# Konfigurasi logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Konfigurasi Celery
 BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 BACKEND_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 celery = Celery("tasks", broker=BROKER_URL, backend=BACKEND_URL)
 
-# Daftar liga target
 TARGET_LEAGUES = [
     'soccer_argentina_primera_division',
     'soccer_australia_aleague',
@@ -46,10 +42,6 @@ TARGET_LEAGUES = [
 
 @celery.task(acks_late=True)
 def record_odds_snapshot(match_db_id: int):
-    """
-    Task untuk mengambil dan merekam satu snapshot odds untuk sebuah pertandingan.
-    Task ini sekarang cerdas dan tidak akan membuat data duplikat.
-    """
     db = SessionLocal()
     try:
         match = db.query(model.Match).filter(model.Match.id == match_db_id).first()
@@ -58,7 +50,6 @@ def record_odds_snapshot(match_db_id: int):
             return
 
         five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
-        
         recent_snapshot = db.query(model.OddsSnapshot).filter(
             model.OddsSnapshot.match_id == match_db_id,
             model.OddsSnapshot.timestamp >= five_minutes_ago
@@ -69,7 +60,6 @@ def record_odds_snapshot(match_db_id: int):
             return
 
         logger.info(f"Mulai merekam odds untuk match: {match.home_team} vs {match.away_team} (api_id: {match.api_id})")
-
         match_odds_data = worker.fetch_odds_for_match(match.api_id, match.sport_key)
 
         if not match_odds_data or not match_odds_data.get("bookmakers"):
@@ -86,16 +76,13 @@ def record_odds_snapshot(match_db_id: int):
             price_draw = next((o['price'] for o in outcomes if o.get('name') == "Draw"), 0.0)
 
             snapshot_schema = schemas.OddsSnapshotCreate(
-                bookmaker=bookmaker["key"],
-                price_home=price_home,
-                price_draw=price_draw,
-                price_away=price_away
+                bookmaker=bookmaker["key"], price_home=price_home,
+                price_draw=price_draw, price_away=price_away
             )
             crud.create_odds_snapshot(db, odds_snapshot=snapshot_schema, match_id=match_db_id)
             logger.info(f"✅ Berhasil merekam odds untuk match_db_id: {match_db_id}")
         else:
             logger.warning(f"Market 'h2h' tidak ditemukan atau tidak lengkap untuk match api_id: {match.api_id}")
-
     except Exception as e:
         logger.error(f"Error tidak terduga saat merekam odds untuk match_id {match_db_id}: {e}", exc_info=True)
     finally:
@@ -104,9 +91,6 @@ def record_odds_snapshot(match_db_id: int):
 
 @celery.task
 def discover_new_matches():
-    """
-    Mencari pertandingan baru dari liga target.
-    """
     logger.warning("Mulai mencari pertandingan baru...")
     db = SessionLocal()
     try:
@@ -132,10 +116,8 @@ def discover_new_matches():
                         logger.warning(f"Pertandingan baru ditemukan: {match_data['home_team']} vs {match_data['away_team']}")
 
                         new_match_schema = schemas.MatchCreate(
-                            api_id=match_data['id'],
-                            sport_key=match_data['sport_key'],
-                            home_team=match_data['home_team'],
-                            away_team=match_data['away_team'],
+                            api_id=match_data['id'], sport_key=match_data['sport_key'],
+                            home_team=match_data['home_team'], away_team=match_data['away_team'],
                             commence_time=commence_time_utc
                         )
                         new_match = crud.create_match(db, match=new_match_schema)
@@ -147,29 +129,75 @@ def discover_new_matches():
                         ]
                         for exec_time in snapshot_times:
                             if exec_time > datetime.now(timezone.utc):
-                                record_odds_snapshot.apply_async(
-                                    args=[new_match.id], # Hanya kirim satu argumen
-                                    eta=exec_time
-                                )
+                                record_odds_snapshot.apply_async(args=[new_match.id], eta=exec_time)
                                 logger.info(f"Menjadwalkan snapshot untuk match_id {new_match.id} pada {exec_time.isoformat()}")
-
             except requests.exceptions.RequestException as e:
                 logger.error(f"Gagal menghubungi API untuk liga {league_key}: {e}")
             except Exception as e:
                 logger.error(f"Terjadi kesalahan saat memproses liga {league_key}: {e}", exc_info=True)
-
     finally:
         db.close()
         logger.warning("Selesai mencari pertandingan baru.")
 
 
+@celery.task
+def update_completed_match_scores():
+    """
+    Tugas periodik untuk mencari pertandingan yang sudah selesai
+    dan memperbarui skor akhirnya di database.
+    """
+    logger.warning("Memulai tugas: Mencari skor pertandingan yang telah selesai...")
+    db = SessionLocal()
+    try:
+        lookup_time = datetime.now(timezone.utc) - timedelta(minutes=110)
+        
+        matches_to_update = db.query(model.Match).filter(
+            model.Match.commence_time < lookup_time,
+            model.Match.result_home_score.is_(None)
+        ).all()
+
+        if not matches_to_update:
+            logger.info("Tidak ada pertandingan yang perlu diupdate skornya saat ini.")
+            return
+
+        logger.warning(f"Ditemukan {len(matches_to_update)} pertandingan yang akan diupdate skornya.")
+        for match in matches_to_update:
+            score_data = worker.fetch_score_for_match(match.api_id)
+            
+            if score_data:
+                home_score = next((s['score'] for s in score_data['scores'] if s['name'] == match.home_team), None)
+                away_score = next((s['score'] for s in score_data['scores'] if s['name'] == match.away_team), None)
+
+                if home_score is not None and away_score is not None:
+                    match.result_home_score = int(home_score)
+                    match.result_away_score = int(away_score)
+                    db.commit()
+                    logger.info(f"✅ Skor berhasil diupdate untuk match {match.id}: {home_score}-{away_score}")
+                else:
+                    logger.warning(f"Data skor tidak lengkap untuk match {match.id}.")
+            else:
+                 logger.info(f"Panggilan API skor tidak mengembalikan data untuk match {match.id}.")
+
+    except Exception as e:
+        logger.error(f"Terjadi kesalahan pada tugas update_completed_match_scores: {e}", exc_info=True)
+        db.rollback()
+    finally:
+        db.close()
+
+
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
     """
-    Menjadwalkan task periodik.
+    Menjadwalkan semua task periodik.
     """
     sender.add_periodic_task(
         crontab(hour='*/2', minute='0'),
         discover_new_matches.s(),
         name='Cari pertandingan baru dari liga target setiap 2 jam'
+    )
+
+    sender.add_periodic_task(
+        crontab(minute='5'),
+        update_completed_match_scores.s(),
+        name='Ambil skor pertandingan selesai setiap jam'
     )
