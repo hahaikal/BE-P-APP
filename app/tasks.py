@@ -48,13 +48,24 @@ TARGET_LEAGUES = [
 def record_odds_snapshot(match_db_id: int):
     """
     Task untuk mengambil dan merekam satu snapshot odds untuk sebuah pertandingan.
-    Hanya menerima satu argumen: ID dari database kita.
+    Task ini sekarang cerdas dan tidak akan membuat data duplikat.
     """
     db = SessionLocal()
     try:
         match = db.query(model.Match).filter(model.Match.id == match_db_id).first()
         if not match:
             logger.error(f"Match dengan ID database {match_db_id} tidak ditemukan.")
+            return
+
+        five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+        
+        recent_snapshot = db.query(model.OddsSnapshot).filter(
+            model.OddsSnapshot.match_id == match_db_id,
+            model.OddsSnapshot.timestamp >= five_minutes_ago
+        ).first()
+
+        if recent_snapshot:
+            logger.warning(f"Snapshot untuk match_id {match_db_id} sudah ada dalam 5 menit terakhir. Melewatkan...")
             return
 
         logger.info(f"Mulai merekam odds untuk match: {match.home_team} vs {match.away_team} (api_id: {match.api_id})")
