@@ -149,11 +149,12 @@ def update_completed_match_scores():
     logger.warning("Memulai tugas: Mencari skor pertandingan yang telah selesai...")
     db = SessionLocal()
     try:
+        # Cari pertandingan yang sudah lewat 110 menit dari waktu kick-off & belum punya skor
         lookup_time = datetime.now(timezone.utc) - timedelta(minutes=110)
         
         matches_to_update = db.query(model.Match).filter(
             model.Match.commence_time < lookup_time,
-            model.Match.result_home_score.is_(None)
+            model.Match.result_home_score.is_(None) # Cara SQLAlchemy untuk cek NULL
         ).all()
 
         if not matches_to_update:
@@ -162,13 +163,20 @@ def update_completed_match_scores():
 
         logger.warning(f"Ditemukan {len(matches_to_update)} pertandingan yang akan diupdate skornya.")
         for match in matches_to_update:
-            score_data = worker.fetch_score_for_match(match.api_id)
+            
+            # ======================================================================
+            # PERBAIKAN KRUSIAL ADA DI SINI
+            # Sekarang kita mengirim DUA argumen yang dibutuhkan: api_id dan sport_key
+            # ======================================================================
+            score_data = worker.fetch_score_for_match(match.api_id, match.sport_key)
             
             if score_data:
+                # Ekstrak skor dengan aman
                 home_score = next((s['score'] for s in score_data['scores'] if s['name'] == match.home_team), None)
                 away_score = next((s['score'] for s in score_data['scores'] if s['name'] == match.away_team), None)
 
                 if home_score is not None and away_score is not None:
+                    # Update skor di database
                     match.result_home_score = int(home_score)
                     match.result_away_score = int(away_score)
                     db.commit()

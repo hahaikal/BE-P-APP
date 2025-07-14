@@ -4,8 +4,8 @@ python train_model.py
 **run redis**
 docker run -d --name redis-p-app -p 6379:6379 redis
 
-**testing redis**
-docker exec redis-p-app redis-cli ping
+**berishkan redis**
+docker-compose exec redis redis-cli FLUSHDB
 
 **jalankan Celery worker**
 celery -A app.tasks.celery_app worker --loglevel=info 

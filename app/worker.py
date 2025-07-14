@@ -2,36 +2,11 @@ import os
 import requests
 import logging
 
-# Konfigurasi dasar
 THE_ODDS_API_KEY = os.getenv("THE_ODDS_API_KEY")
 ODDS_API_BASE_URL = "https://api.the-odds-api.com"
 
-# Konfigurasi logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Fungsi ini tidak kita gunakan lagi untuk mencari pertandingan,
-# tetapi biarkan saja untuk referensi atau penggunaan di masa depan.
-def fetch_upcoming_matches():
-    """
-    Mengambil jadwal pertandingan yang akan datang dari The Odds API menggunakan requests.
-    """
-    if not THE_ODDS_API_KEY:
-        logger.error("Error: THE_ODDS_API_KEY tidak ditemukan.")
-        return []
-
-    url = f"{ODDS_API_BASE_URL}/v4/sports/soccer_epl/scores"
-    params = {"apiKey": THE_ODDS_API_KEY, "daysFrom": "3"}
-
-    try:
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        logger.info("✅ Berhasil mengambil data jadwal pertandingan.")
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error saat mengambil jadwal pertandingan: {e}")
-    return []
-
 
 def fetch_odds_for_match(match_api_id: str, sport_key: str):
     """
@@ -62,29 +37,21 @@ def fetch_odds_for_match(match_api_id: str, sport_key: str):
         logger.error(f"Error umum saat mengambil odds untuk {match_api_id}: {e}", exc_info=True)
         return None
 
-def fetch_score_for_match(match_api_id: str):
-    """
-    Mengambil data skor untuk satu pertandingan yang sudah selesai
-    menggunakan endpoint /scores.
-    """
-    logger.info(f"Mencari skor untuk match_api_id: {match_api_id}")
+def fetch_score_for_match(match_api_id: str, sport_key: str):
+    logger.info(f"Mencari skor untuk match_api_id: {match_api_id} di liga {sport_key}")
     try:
-        api_url = f"{ODDS_API_BASE_URL}/v4/sports/soccer/scores"
+        api_url = f"{ODDS_API_BASE_URL}/v4/sports/{sport_key}/scores"
         params = {
             "apiKey": THE_ODDS_API_KEY,
             "eventIds": match_api_id
         }
-        
         response = requests.get(api_url, params=params, timeout=30)
         response.raise_for_status()
         data = response.json()
-
         if data and data[0].get('completed', False) and data[0].get('scores'):
             return data[0]
-            
-        logger.info(f"Skor belum tersedia atau match {match_api_id} belum selesai.")
         return None
-        
+
     except requests.exceptions.RequestException as e:
         logger.error(f"Gagal menghubungi API skor untuk {match_api_id}: {e}")
         return None

@@ -24,6 +24,7 @@ class MatchBase(BaseModel):
 
 class MatchCreate(MatchBase):
     api_id: str
+
 class ManualMatchCreate(MatchBase):
     api_id: Optional[str] = None
     sport_key: Optional[str] = "manual_input"
@@ -36,19 +37,14 @@ class Match(MatchBase):
     odds_snapshots: List[OddsSnapshot] = []
     model_config = ConfigDict(from_attributes=True)
 
-class MatchPredictionPayload(BaseModel):
-    home_team: str
-    away_team: str
+class ScoreUpdate(BaseModel):
+    result_home_score: int
+    result_away_score: int
 
-class MatchPredictionResult(BaseModel):
-    home_team: str
-    away_team: str
-    predicted_outcome: str
-    prediction_probabilities: Dict[str, float]
 
 class PredictionOutput(BaseModel):
     match_id: int
     home_team: str
     away_team: str
-    prediction: str
+    predicted_outcome: str
     probabilities: dict[str, float]

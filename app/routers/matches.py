@@ -50,27 +50,35 @@ def create_manual_odds(match_id: int, odds_snapshot: schemas.OddsSnapshotCreate,
         
     return crud.create_odds_snapshot(db=db, odds_snapshot=odds_snapshot, match_id=match_id)
 
+@router.put("/{match_id}/score", response_model=schemas.Match)
+def update_manual_score(match_id: int, scores: schemas.ScoreUpdate, db: Session = Depends(get_db)):
+    """
+    Endpoint untuk memasukkan/memperbarui skor pertandingan secara manual.
+    """
+    
+    logger.info(f"Menerima permintaan manual untuk update skor match_id: {match_id}")
+    updated_match = crud.update_match_scores(db, match_id=match_id, scores=scores)
+    
+    if updated_match is None:
+        raise HTTPException(status_code=404, detail="Match tidak ditemukan")
+    
+    logger.info(f"✅ Skor berhasil diupdate untuk match {match_id}: {scores.result_home_score}-{scores.result_away_score}")
+    return updated_match
 
 @router.get("/{match_id}/prediction", response_model=schemas.PredictionOutput)
 def get_match_prediction(match_id: int, db: Session = Depends(get_db)):
-    """
-    Get prediction for a specific match.
-    NOTE: This is a placeholder implementation.
-    """
+    """Get prediction for a specific match."""
+    
     db_match = crud.get_match_by_id(db, match_id=match_id)
+    
     if db_match is None:
         raise HTTPException(status_code=404, detail="Match not found")
-
-    logger.info(f"Generating placeholder prediction for match_id: {match_id}")
+    
     prediction_result = {
         "match_id": match_id,
         "home_team": db_match.home_team,
         "away_team": db_match.away_team,
         "predicted_outcome": "HOME_WIN",
-        "probabilities": {
-            "home_win": 0.65,
-            "draw": 0.20,
-            "away_win": 0.15
-        }
+        "probabilities": {"home_win": 0.65, "draw": 0.20, "away_win": 0.15}
     }
     return prediction_result
