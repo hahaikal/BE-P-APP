@@ -199,7 +199,10 @@ def setup_periodic_tasks(sender, **kwargs):
     Menjadwalkan semua task periodik.
     """
     sender.add_periodic_task(
-        crontab(hour='*/2', minute='0'),
+        crontab(
+            minute='0', 
+            hour='0,2,4,6,8,10,12,14,16,18,20,22'
+        ),
         discover_new_matches.s(),
         name='Cari pertandingan baru dari liga target setiap 2 jam'
     )
