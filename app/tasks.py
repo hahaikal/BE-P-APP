@@ -156,53 +156,6 @@ def discover_new_matches():
         db.close()
         logger.warning("Selesai mencari pertandingan baru.")
 
-
-@celery.task
-def update_completed_match_scores():
-    """
-    Tugas periodik untuk mencari pertandingan yang sudah selesai
-    dan memperbarui skor akhirnya di database.
-    """
-    logger.warning("Memulai tugas: Mencari skor pertandingan yang telah selesai...")
-    db = SessionLocal()
-    try:
-        lookup_time = datetime.now(timezone.utc) - timedelta(minutes=110)
-        
-        matches_to_update = db.query(model.Match).filter(
-            model.Match.commence_time < lookup_time,
-            model.Match.result_home_score.is_(None)
-        ).all()
-
-        if not matches_to_update:
-            logger.info("Tidak ada pertandingan yang perlu diupdate skornya saat ini.")
-            return
-
-        logger.warning(f"Ditemukan {len(matches_to_update)} pertandingan yang akan diupdate skornya.")
-        for match in matches_to_update:
-            
-            score_data = worker.fetch_score_for_match(match.api_id, match.sport_key)
-            
-            if score_data:
-                home_score = next((s['score'] for s in score_data['scores'] if s['name'] == match.home_team), None)
-                away_score = next((s['score'] for s in score_data['scores'] if s['name'] == match.away_team), None)
-
-                if home_score is not None and away_score is not None:
-                    match.result_home_score = int(home_score)
-                    match.result_away_score = int(away_score)
-                    db.commit()
-                    logger.info(f"✅ Skor berhasil diupdate untuk match {match.id}: {home_score}-{away_score}")
-                else:
-                    logger.warning(f"Data skor tidak lengkap untuk match {match.id}.")
-            else:
-                 logger.info(f"Panggilan API skor tidak mengembalikan data untuk match {match.id}.")
-
-    except Exception as e:
-        logger.error(f"Terjadi kesalahan pada tugas update_completed_match_scores: {e}", exc_info=True)
-        db.rollback()
-    finally:
-        db.close()
-
-
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
     """
@@ -215,10 +168,4 @@ def setup_periodic_tasks(sender, **kwargs):
         ),
         discover_new_matches.s(),
         name='Cari pertandingan baru dari liga target setiap 2 jam'
-    )
-
-    sender.add_periodic_task(
-        crontab(minute='5'),
-        update_completed_match_scores.s(),
-        name='Ambil skor pertandingan selesai setiap jam'
     )

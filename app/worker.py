@@ -36,25 +36,3 @@ def fetch_odds_for_match(match_api_id: str, sport_key: str):
     except Exception as e:
         logger.error(f"Error umum saat mengambil odds untuk {match_api_id}: {e}", exc_info=True)
         return None
-
-def fetch_score_for_match(match_api_id: str, sport_key: str):
-    logger.info(f"Mencari skor untuk match_api_id: {match_api_id} di liga {sport_key}")
-    try:
-        api_url = f"{ODDS_API_BASE_URL}/v4/sports/{sport_key}/scores"
-        params = {
-            "apiKey": THE_ODDS_API_KEY,
-            "eventIds": match_api_id
-        }
-        response = requests.get(api_url, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        if data and data[0].get('completed', False) and data[0].get('scores'):
-            return data[0]
-        return None
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Gagal menghubungi API skor untuk {match_api_id}: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Error tidak terduga saat mengambil skor untuk {match_api_id}: {e}", exc_info=True)
-        return None
