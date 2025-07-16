@@ -1,5 +1,5 @@
 from .database import engine, Base
-from . import model  # Import models to register them with Base metadata
+from . import model  
 
 def create_tables():
     Base.metadata.create_all(bind=engine)

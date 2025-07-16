@@ -12,10 +12,8 @@ from .database import engine
 from . import model
 from .routers import matches
 
-# Mengatur logging dasar untuk mempermudah debugging
 logging.basicConfig(level=logging.INFO)
 
-# --- Lifespan Event untuk Startup dan Shutdown ---
 import asyncio
 from sqlalchemy.exc import OperationalError
 
@@ -25,12 +23,10 @@ async def lifespan(app: FastAPI):
     Mengelola event saat aplikasi dimulai dan dihentikan.
     Ini adalah praktik modern di FastAPI untuk menangani inisialisasi.
     """
-    # === KODE SAAT STARTUP ===
     logging.info("Memulai aplikasi...")
 
-    # 1. Membuat tabel database dengan retry jika gagal karena DB belum siap
     max_retries = 10
-    retry_delay = 3  # detik
+    retry_delay = 3  
     for attempt in range(max_retries):
         try:
             logging.info("Memeriksa dan membuat tabel database jika belum ada...")
@@ -47,9 +43,7 @@ async def lifespan(app: FastAPI):
         logging.error("Gagal membuat tabel database setelah beberapa kali percobaan.")
         raise RuntimeError("Database tidak tersedia.")
 
-    # 2. Inisialisasi Cache Redis
     try:
-        # Menggunakan environment variable untuk URL Redis, dengan fallback ke default
         redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
         redis = aioredis.from_url(redis_url)
         FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
@@ -57,7 +51,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.error(f"Gagal terhubung ke Redis: {e}")
 
-    # 3. Memuat model Machine Learning ke dalam state aplikasi
     try:
         logging.info("Memuat artefak model Machine Learning...")
         app.state.model = joblib.load("trained_model.joblib")
@@ -71,13 +64,11 @@ async def lifespan(app: FastAPI):
         logging.error(f"Terjadi kesalahan saat memuat model ML: {e}")
         raise
 
-    yield  # Aplikasi berjalan setelah 'yield' ini
+    yield  
 
-    # === KODE SAAT SHUTDOWN ===
     logging.info("Aplikasi dihentikan.")
 
 
-# --- Inisialisasi Aplikasi FastAPI ---
 app = FastAPI(
     title="P-APP Backend API",
     description="API untuk platform prediksi hasil sepak bola P-APP.",
@@ -85,10 +76,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# --- Konfigurasi Middleware CORS ---
 origins = [
-    "http://localhost:5173",  # Alamat frontend (Vite/React/Vue)
-    "http://127.0.0.1:5173", # Alternatif untuk frontend
+    "http://localhost:5173",  
+    "http://127.0.0.1:5173", 
     "http://localhost",
 ]
 
@@ -100,10 +90,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Menambahkan Router dari file lain ---
 app.include_router(matches.router, prefix="/api/v1/matches", tags=["Matches & Predictions"])
 
-# --- Endpoint Tambahan ---
 @app.get("/health", tags=["Monitoring"])
 def health_check():
     """

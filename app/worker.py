@@ -15,6 +15,7 @@ def fetch_odds_for_match(match_api_id: str, sport_key: str):
     logger.info(f"Mencoba mengambil odds untuk match_api_id: {match_api_id}")
     try:
         api_url = f"{ODDS_API_BASE_URL}/v4/sports/{sport_key}/odds"
+        
         params = {
             "apiKey": THE_ODDS_API_KEY,
             "regions": "eu",
@@ -23,11 +24,14 @@ def fetch_odds_for_match(match_api_id: str, sport_key: str):
             "dateFormat": "iso",
             "eventIds": match_api_id,
         }
+        
         response = requests.get(api_url, params=params, timeout=30)
         response.raise_for_status()
         data = response.json()
+        
         if data:
             return data[0]
+        
         logger.warning(f"Respons API kosong untuk odds match_api_id: {match_api_id}")
         return None
     except requests.exceptions.HTTPError as e:
