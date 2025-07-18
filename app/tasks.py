@@ -59,6 +59,10 @@ TARGET_LEAGUES = [
 
 @celery.task(acks_late=True)
 def record_odds_snapshot(match_db_id: int):
+    """
+    Task untuk mengambil dan merekam satu snapshot odds.
+    Sekarang dengan penjaga anti-duplikat.
+    """
     db = SessionLocal()
     try:
         match = db.query(model.Match).filter(model.Match.id == match_db_id).first()
@@ -77,8 +81,9 @@ def record_odds_snapshot(match_db_id: int):
             return
 
         logger.info(f"Mulai merekam odds untuk match: {match.home_team} vs {match.away_team} (api_id: {match.api_id})")
+        
         match_odds_data = worker.fetch_odds_for_match(match.api_id, match.sport_key)
-
+        
         if not match_odds_data or not match_odds_data.get("bookmakers"):
             logger.warning(f"Tidak ada data odds atau bookmakers ditemukan untuk match api_id: {match.api_id}")
             return
@@ -93,13 +98,16 @@ def record_odds_snapshot(match_db_id: int):
             price_draw = next((o['price'] for o in outcomes if o.get('name') == "Draw"), 0.0)
 
             snapshot_schema = schemas.OddsSnapshotCreate(
-                bookmaker=bookmaker["key"], price_home=price_home,
-                price_draw=price_draw, price_away=price_away
+                bookmaker=bookmaker["key"],
+                price_home=price_home,
+                price_draw=price_draw,
+                price_away=price_away
             )
             crud.create_odds_snapshot(db, odds_snapshot=snapshot_schema, match_id=match_db_id)
             logger.info(f"✅ Berhasil merekam odds untuk match_db_id: {match_db_id}")
         else:
             logger.warning(f"Market 'h2h' tidak ditemukan atau tidak lengkap untuk match api_id: {match.api_id}")
+
     except Exception as e:
         logger.error(f"Error tidak terduga saat merekam odds untuk match_id {match_db_id}: {e}", exc_info=True)
     finally:
@@ -155,6 +163,7 @@ def discover_new_matches():
     finally:
         db.close()
         logger.warning("Selesai mencari pertandingan baru.")
+
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
