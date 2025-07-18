@@ -61,7 +61,7 @@ TARGET_LEAGUES = [
 def record_odds_snapshot(match_db_id: int):
     """
     Task untuk mengambil dan merekam satu snapshot odds.
-    Sekarang dengan penjaga anti-duplikat.
+    Dengan penjaga anti-duplikat.
     """
     db = SessionLocal()
     try:
@@ -81,9 +81,8 @@ def record_odds_snapshot(match_db_id: int):
             return
 
         logger.info(f"Mulai merekam odds untuk match: {match.home_team} vs {match.away_team} (api_id: {match.api_id})")
-        
         match_odds_data = worker.fetch_odds_for_match(match.api_id, match.sport_key)
-        
+
         if not match_odds_data or not match_odds_data.get("bookmakers"):
             logger.warning(f"Tidak ada data odds atau bookmakers ditemukan untuk match api_id: {match.api_id}")
             return
@@ -98,26 +97,29 @@ def record_odds_snapshot(match_db_id: int):
             price_draw = next((o['price'] for o in outcomes if o.get('name') == "Draw"), 0.0)
 
             snapshot_schema = schemas.OddsSnapshotCreate(
-                bookmaker=bookmaker["key"],
-                price_home=price_home,
-                price_draw=price_draw,
-                price_away=price_away
+                bookmaker=bookmaker["key"], price_home=price_home,
+                price_draw=price_draw, price_away=price_away
             )
             crud.create_odds_snapshot(db, odds_snapshot=snapshot_schema, match_id=match_db_id)
             logger.info(f"✅ Berhasil merekam odds untuk match_db_id: {match_db_id}")
         else:
             logger.warning(f"Market 'h2h' tidak ditemukan atau tidak lengkap untuk match api_id: {match.api_id}")
-
     except Exception as e:
         logger.error(f"Error tidak terduga saat merekam odds untuk match_id {match_db_id}: {e}", exc_info=True)
     finally:
         db.close()
 
 
+# --- [MODIFIKASI] Implementasi filter tanggal ---
 @celery.task
 def discover_new_matches():
-    logger.warning("Mulai mencari pertandingan baru...")
+    """
+    Mengambil data pertandingan dari API dan memfilter hanya untuk hari ini.
+    """
+    logger.warning("Mulai mencari pertandingan baru untuk HARI INI...")
     db = SessionLocal()
+    today_utc = datetime.now(timezone.utc).date()
+    
     try:
         for league_key in TARGET_LEAGUES:
             try:
@@ -134,28 +136,29 @@ def discover_new_matches():
                     continue
 
                 for match_data in matches_data:
-                    existing_match = crud.get_match_by_api_id(db, api_id=match_data['id'])
-                    if not existing_match:
-                        commence_time_utc = datetime.fromisoformat(match_data['commence_time'].replace("Z", "+00:00"))
-                        
-                        logger.warning(f"Pertandingan baru ditemukan: {match_data['home_team']} vs {match_data['away_team']}")
+                    commence_time_utc = datetime.fromisoformat(match_data['commence_time'].replace("Z", "+00:00"))
+                    
+                    if commence_time_utc.date() == today_utc:
+                        existing_match = crud.get_match_by_api_id(db, api_id=match_data['id'])
+                        if not existing_match:
+                            logger.warning(f"Pertandingan HARI INI ditemukan: {match_data['home_team']} vs {match_data['away_team']}")
 
-                        new_match_schema = schemas.MatchCreate(
-                            api_id=match_data['id'], sport_key=match_data['sport_key'],
-                            home_team=match_data['home_team'], away_team=match_data['away_team'],
-                            commence_time=commence_time_utc
-                        )
-                        new_match = crud.create_match(db, match=new_match_schema)
+                            new_match_schema = schemas.MatchCreate(
+                                api_id=match_data['id'], sport_key=match_data['sport_key'],
+                                home_team=match_data['home_team'], away_team=match_data['away_team'],
+                                commence_time=commence_time_utc
+                            )
+                            new_match = crud.create_match(db, match=new_match_schema)
 
-                        snapshot_times = [
-                            new_match.commence_time - timedelta(minutes=60),
-                            new_match.commence_time - timedelta(minutes=20),
-                            new_match.commence_time - timedelta(minutes=5)
-                        ]
-                        for exec_time in snapshot_times:
-                            if exec_time > datetime.now(timezone.utc):
-                                record_odds_snapshot.apply_async(args=[new_match.id], eta=exec_time)
-                                logger.info(f"Menjadwalkan snapshot untuk match_id {new_match.id} pada {exec_time.isoformat()}")
+                            snapshot_times = [
+                                new_match.commence_time - timedelta(minutes=60),
+                                new_match.commence_time - timedelta(minutes=20),
+                                new_match.commence_time - timedelta(minutes=5)
+                            ]
+                            for exec_time in snapshot_times:
+                                if exec_time > datetime.now(timezone.utc):
+                                    record_odds_snapshot.apply_async(args=[new_match.id], eta=exec_time)
+                                    logger.info(f"Menjadwalkan snapshot untuk match_id {new_match.id} pada {exec_time.isoformat()}")
             except requests.exceptions.RequestException as e:
                 logger.error(f"Gagal menghubungi API untuk liga {league_key}: {e}")
             except Exception as e:
@@ -171,10 +174,7 @@ def setup_periodic_tasks(sender, **kwargs):
     Menjadwalkan semua task periodik.
     """
     sender.add_periodic_task(
-        crontab(
-            minute='0', 
-            hour='0,2,4,6,8,10,12,14,16,18,20,22'
-        ),
+        crontab(hour=4, minute=0),
         discover_new_matches.s(),
-        name='Cari pertandingan baru dari liga target setiap 2 jam'
+        name='Cari pertandingan untuk hari ini (sekali sehari)'
     )
