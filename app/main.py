@@ -10,7 +10,9 @@ from redis import asyncio as aioredis
 
 from .database import engine
 from . import model
-from .routers import matches
+# --- [MODIFIKASI] ---
+# Impor router auth bersama dengan matches
+from .routers import matches, auth
 
 logging.basicConfig(level=logging.INFO)
 
@@ -21,7 +23,6 @@ from sqlalchemy.exc import OperationalError
 async def lifespan(app: FastAPI):
     """
     Mengelola event saat aplikasi dimulai dan dihentikan.
-    Ini adalah praktik modern di FastAPI untuk menangani inisialisasi.
     """
     logging.info("Memulai aplikasi...")
 
@@ -53,12 +54,13 @@ async def lifespan(app: FastAPI):
 
     try:
         logging.info("Memuat artefak model Machine Learning...")
-        app.state.model = joblib.load("trained_model.joblib")
-        app.state.encoder = joblib.load("label_encoder.joblib")
-        app.state.feature_columns = joblib.load("feature_columns.joblib")
+        # [PERBAIKAN] Path disesuaikan untuk konsistensi
+        app.state.model = joblib.load("artifacts/trained_model.joblib")
+        app.state.encoder = joblib.load("artifacts/label_encoder.joblib")
+        app.state.feature_columns = joblib.load("artifacts/feature_columns.joblib")
         logging.info("Model, Encoder, dan Kolom Fitur berhasil dimuat.")
     except FileNotFoundError as e:
-        logging.error(f"File model tidak ditemukan: {e}. Pastikan file .joblib ada di root direktori.")
+        logging.error(f"File model tidak ditemukan: {e}. Pastikan file .joblib ada di direktori 'artifacts/'.")
         raise
     except Exception as e:
         logging.error(f"Terjadi kesalahan saat memuat model ML: {e}")
@@ -90,7 +92,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(matches.router, prefix="/api/v1/matches", tags=["Matches & Predictions"])
+# --- [MODIFIKASI] ---
+# Daftarkan router auth dan matches
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(matches.router, prefix="/api/v1/matches")
+
 
 @app.get("/health", tags=["Monitoring"])
 def health_check():

@@ -10,3 +10,6 @@ pandas
 mlflow
 fastapi-cache2[redis]
 pytz
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart

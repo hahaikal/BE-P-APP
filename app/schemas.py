@@ -1,6 +1,26 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
+
+class UserBase(BaseModel):
+    username: str
+
+class UserCreate(UserBase):
+    password: str
+
+class User(UserBase):
+    id: int
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
 
 class OddsSnapshotBase(BaseModel):
     bookmaker: str
@@ -29,7 +49,7 @@ class OddsSnapshot(OddsSnapshotBase):
     timestamp: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True 
 
 class MatchBase(BaseModel):
     sport_key: str
@@ -55,7 +75,7 @@ class Match(MatchBase):
     odds_snapshots: list[OddsSnapshot] = []
 
     class Config:
-        orm_mode = True
+        from_attributes = True 
 
 class PredictionOutput(BaseModel):
     match_id: int
@@ -63,3 +83,9 @@ class PredictionOutput(BaseModel):
     away_team: str
     predicted_outcome: str
     probabilities: dict[str, float]
+
+class StatusOverview(BaseModel):
+    complete: List[Match]
+    incomplete: List[Match]
+    empty: List[Match]
+

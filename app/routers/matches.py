@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import logging
 from datetime import datetime, time, timezone
-import pytz
+import pytz # <-- Impor pytz
 
 from .. import crud, schemas
 from ..database import get_db
@@ -14,6 +14,8 @@ router = APIRouter(
     tags=["matches"],
     responses={404: {"description": "Not found"}},
 )
+
+# ... (endpoint read_matches dan create_manual_match tidak berubah) ...
 
 @router.get("/", response_model=list[schemas.Match])
 def read_matches(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
@@ -40,6 +42,7 @@ def create_manual_match(match: schemas.ManualMatchCreate, db: Session = Depends(
     return crud.create_match(db=db, match=match)
 
 
+# --- [MODIFIKASI] Endpoint untuk menambah odds manual ---
 @router.post("/{match_id}/odds/manual", response_model=schemas.OddsSnapshot, status_code=status.HTTP_201_CREATED)
 def create_manual_odds(match_id: int, odds_data: schemas.ManualOddsSnapshotCreate, db: Session = Depends(get_db)):
     """
@@ -53,16 +56,22 @@ def create_manual_odds(match_id: int, odds_data: schemas.ManualOddsSnapshotCreat
         raise HTTPException(status_code=404, detail="Match tidak ditemukan")
 
     try:
+        # 1. Tentukan timezone (misal: WIB)
         local_tz = pytz.timezone(odds_data.snapshot_timezone)
         
+        # 2. Ambil tanggal hari ini di timezone tersebut
         today_local = datetime.now(local_tz).date()
         
+        # 3. Parse waktu dari input string
         time_input = datetime.strptime(odds_data.snapshot_time, '%H:%M').time()
         
+        # 4. Gabungkan tanggal hari ini dengan waktu input
         naive_datetime = datetime.combine(today_local, time_input)
         
+        # 5. Beri informasi timezone ke datetime yang baru dibuat
         local_datetime = local_tz.localize(naive_datetime)
         
+        # 6. Konversi ke UTC untuk disimpan di database
         utc_datetime = local_datetime.astimezone(timezone.utc)
         
         logger.info(f"Waktu input {odds_data.snapshot_time} {odds_data.snapshot_timezone} dikonversi ke {utc_datetime.isoformat()} UTC")
@@ -72,12 +81,15 @@ def create_manual_odds(match_id: int, odds_data: schemas.ManualOddsSnapshotCreat
     except pytz.UnknownTimeZoneError:
         raise HTTPException(status_code=400, detail=f"Timezone tidak dikenal: {odds_data.snapshot_timezone}")
 
+    # Panggil CRUD dengan timestamp yang sudah dikonversi
     return crud.create_odds_snapshot(
         db=db, 
         odds_snapshot=odds_data, 
         match_id=match_id,
-        timestamp=utc_datetime 
+        timestamp=utc_datetime # <-- Kirim timestamp yang sudah diproses
     )
+
+# ... (sisa endpoint lainnya tidak berubah) ...
 
 @router.put("/{match_id}/score", response_model=schemas.Match)
 def update_manual_score(match_id: int, scores: schemas.ScoreUpdate, db: Session = Depends(get_db)):

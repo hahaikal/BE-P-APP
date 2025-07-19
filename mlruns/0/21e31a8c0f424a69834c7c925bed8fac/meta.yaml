@@ -1,0 +1,14 @@
+artifact_uri: file:///F:/Project/p_app_backend/mlruns/0/21e31a8c0f424a69834c7c925bed8fac/artifacts
+end_time: 1752928411582
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 21e31a8c0f424a69834c7c925bed8fac
+run_name: lyrical-horse-977
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1752928407384
+status: 4
+tags: []
+user_id: appuser
