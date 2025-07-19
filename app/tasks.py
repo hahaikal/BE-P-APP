@@ -17,52 +17,23 @@ BACKEND_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 celery = Celery("tasks", broker=BROKER_URL, backend=BACKEND_URL)
 
 TARGET_LEAGUES = [
-    'soccer_argentina_primera_division',
-    'soccer_australia_aleague',
-    'soccer_austria_bundesliga',
-    'soccer_belgium_first_div',
-    'soccer_brazil_campeonato',
-    'soccer_brazil_serie_b',
-    'soccer_chile_campeonato',
-    'soccer_china_superleague',
-    'soccer_denmark_superliga',
-    'soccer_efl_champ',
-    'soccer_england_efl_cup',
-    'soccer_england_league1',
-    'soccer_england_league2',
-    'soccer_epl',
-    'soccer_finland_veikkausliiga',
-    'soccer_france_ligue_one',
-    'soccer_france_ligue_two',
-    'soccer_germany_bundesliga',
-    'soccer_germany_bundesliga2',
-    'soccer_greece_super_league',
-    'soccer_italy_serie_a',
-    'soccer_italy_serie_b',
-    'soccer_japan_j_league',
-    'soccer_korea_kleague1',
-    'soccer_league_of_ireland',
-    'soccer_mexico_ligamx',
-    'soccer_netherlands_eredivisie',
-    'soccer_norway_eliteserien',
-    'soccer_poland_ekstraklasa',
-    'soccer_portugal_primeira_liga',
-    'soccer_spain_la_liga',
-    'soccer_spain_segunda_division',
-    'soccer_spl',
-    'soccer_sweden_allsvenskan',
-    'soccer_sweden_superettan',
-    'soccer_switzerland_superleague',
-    'soccer_turkey_super_league',
-    'soccer_usa_mls'
+    'soccer_argentina_primera_division', 'soccer_australia_aleague', 'soccer_austria_bundesliga',
+    'soccer_belgium_first_div', 'soccer_brazil_campeonato', 'soccer_brazil_serie_b',
+    'soccer_chile_campeonato', 'soccer_china_superleague', 'soccer_denmark_superliga',
+    'soccer_efl_champ', 'soccer_england_efl_cup', 'soccer_england_league1',
+    'soccer_england_league2', 'soccer_epl', 'soccer_finland_veikkausliiga',
+    'soccer_france_ligue_one', 'soccer_france_ligue_two', 'soccer_germany_bundesliga',
+    'soccer_germany_bundesliga2', 'soccer_greece_super_league', 'soccer_italy_serie_a',
+    'soccer_italy_serie_b', 'soccer_japan_j_league', 'soccer_korea_kleague1',
+    'soccer_league_of_ireland', 'soccer_mexico_ligamx', 'soccer_netherlands_eredivisie',
+    'soccer_norway_eliteserien', 'soccer_poland_ekstraklasa', 'soccer_portugal_primeira_liga',
+    'soccer_spain_la_liga', 'soccer_spain_segunda_division', 'soccer_spl',
+    'soccer_sweden_allsvenskan', 'soccer_sweden_superettan', 'soccer_switzerland_superleague',
+    'soccer_turkey_super_league', 'soccer_usa_mls'
 ]
 
 @celery.task(acks_late=True)
 def record_odds_snapshot(match_db_id: int):
-    """
-    Task untuk mengambil dan merekam satu snapshot odds.
-    Dengan penjaga anti-duplikat.
-    """
     db = SessionLocal()
     try:
         match = db.query(model.Match).filter(model.Match.id == match_db_id).first()
@@ -110,12 +81,8 @@ def record_odds_snapshot(match_db_id: int):
         db.close()
 
 
-# --- [MODIFIKASI] Implementasi filter tanggal ---
 @celery.task
 def discover_new_matches():
-    """
-    Mengambil data pertandingan dari API dan memfilter hanya untuk hari ini.
-    """
     logger.warning("Mulai mencari pertandingan baru untuk HARI INI...")
     db = SessionLocal()
     today_utc = datetime.now(timezone.utc).date()
@@ -168,6 +135,49 @@ def discover_new_matches():
         logger.warning("Selesai mencari pertandingan baru.")
 
 
+@celery.task
+def fetch_and_update_daily_scores():
+    """
+    Mengambil data skor pertandingan kemarin dari semua liga target dan
+    memperbaruinya di database.
+    """
+    logger.warning("Mulai tugas harian: Mengambil dan memperbarui skor pertandingan.")
+    db = SessionLocal()
+    try:
+        for league_key in TARGET_LEAGUES:
+            scores_data = worker.fetch_daily_scores_by_league(league_key)
+            
+            if not scores_data:
+                logger.info(f"Tidak ada data skor ditemukan untuk liga {league_key}.")
+                continue
+            
+            for score_item in scores_data:
+                if not score_item.get('completed', False) or not score_item.get('scores'):
+                    continue
+
+                api_id = score_item['id']
+                db_match = crud.get_match_by_api_id(db, api_id=api_id)
+
+                if db_match:
+                    home_score = next((s['score'] for s in score_item['scores'] if s['name'] == db_match.home_team), None)
+                    away_score = next((s['score'] for s in score_item['scores'] if s['name'] == db_match.away_team), None)
+
+                    if home_score is not None and away_score is not None:
+                        score_update_schema = schemas.ScoreUpdate(
+                            result_home_score=int(home_score),
+                            result_away_score=int(away_score)
+                        )
+                        crud.update_match_scores(db, match_id=db_match.id, scores=score_update_schema)
+                        logger.info(f"✅ Skor berhasil diupdate untuk match ID {db_match.id}: {home_score}-{away_score}")
+                    else:
+                        logger.warning(f"Data skor tidak lengkap untuk match api_id {api_id}.")
+                else:
+                    logger.info(f"Match dengan api_id {api_id} tidak ditemukan di DB, skor diabaikan.")
+    finally:
+        db.close()
+        logger.warning("Selesai memperbarui skor harian.")
+
+
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
     """
@@ -177,4 +187,10 @@ def setup_periodic_tasks(sender, **kwargs):
         crontab(hour=4, minute=0),
         discover_new_matches.s(),
         name='Cari pertandingan untuk hari ini (sekali sehari)'
+    )
+
+    sender.add_periodic_task(
+        crontab(hour=2, minute=0),
+        fetch_and_update_daily_scores.s(),
+        name='Ambil dan perbarui skor pertandingan harian'
     )
