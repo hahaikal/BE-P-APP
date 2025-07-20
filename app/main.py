@@ -4,8 +4,6 @@ import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
-# --- [MODIFIKASI] ---
-# Mengubah cara impor untuk fastapi-cache2
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from redis import asyncio as aioredis
@@ -21,12 +19,8 @@ from sqlalchemy.exc import OperationalError
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Mengelola event saat aplikasi dimulai dan dihentikan.
-    """
     logging.info("Memulai aplikasi...")
 
-    # ... (Kode koneksi database tidak berubah) ...
     max_retries = 10
     retry_delay = 3  
     for attempt in range(max_retries):
@@ -45,18 +39,14 @@ async def lifespan(app: FastAPI):
         logging.error("Gagal membuat tabel database setelah beberapa kali percobaan.")
         raise RuntimeError("Database tidak tersedia.")
 
-    # --- [MODIFIKASI] ---
-    # Mengubah cara inisialisasi cache
     try:
         redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
         redis = aioredis.from_url(redis_url)
-        # Inisialisasi sekarang adalah fungsi async
         await FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
         logging.info("Koneksi ke Redis Cache berhasil diinisialisasi.")
     except Exception as e:
         logging.error(f"Gagal terhubung ke Redis: {e}")
 
-    # ... (Kode loading model tidak berubah) ...
     try:
         logging.info("Mencoba memuat artefak model Machine Learning...")
         app.state.model = joblib.load("artifacts/trained_model.joblib")
@@ -86,8 +76,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# ... (Kode middleware dan router tidak berubah) ...
 origins = [
+    "http://localhost:3000",  # URL Frontend Anda
     "http://localhost:5173",  
     "http://127.0.0.1:5173", 
     "http://localhost",
