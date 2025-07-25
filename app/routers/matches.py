@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, time, timezone
 import pytz
 
-from .. import crud, schemas, auth # Pastikan auth diimpor untuk keamanan
+from .. import crud, schemas, auth
 from ..database import get_db
 
 logging.basicConfig(level=logging.INFO)
@@ -16,7 +16,6 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-# Endpoint GET (Publik)
 @router.get("/", response_model=list[schemas.Match])
 def read_matches(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     try:
@@ -26,7 +25,6 @@ def read_matches(skip: int = 0, limit: int = 100, db: Session = Depends(get_db))
         logger.error(f"Error reading matches: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-# Endpoint POST (Dilindungi)
 @router.post("/manual", response_model=schemas.Match, status_code=status.HTTP_201_CREATED)
 def create_manual_match(match: schemas.ManualMatchCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(auth.get_current_user)):
     logger.info(f"Menerima permintaan manual untuk membuat pertandingan: {match.home_team} vs {match.away_team}")
@@ -34,7 +32,6 @@ def create_manual_match(match: schemas.ManualMatchCreate, db: Session = Depends(
         match.api_id = f"manual_{int(datetime.now().timestamp())}"
     return crud.create_match(db=db, match=match)
 
-# Endpoint POST (Dilindungi)
 @router.post("/{match_id}/odds/manual", response_model=schemas.OddsSnapshot, status_code=status.HTTP_201_CREATED)
 def create_manual_odds(match_id: int, odds_data: schemas.ManualOddsSnapshotCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(auth.get_current_user)):
     logger.info(f"Menerima permintaan manual untuk menambah odds ke match_id: {match_id} pada waktu {odds_data.snapshot_time}")
@@ -55,7 +52,6 @@ def create_manual_odds(match_id: int, odds_data: schemas.ManualOddsSnapshotCreat
         raise HTTPException(status_code=400, detail=f"Timezone tidak dikenal: {odds_data.snapshot_timezone}")
     return crud.create_odds_snapshot(db=db, odds_snapshot=odds_data, match_id=match_id, timestamp=utc_datetime)
 
-# Endpoint PUT (Dilindungi)
 @router.put("/{match_id}/score", response_model=schemas.Match)
 def update_manual_score(match_id: int, scores: schemas.ScoreUpdate, db: Session = Depends(get_db), current_user: schemas.User = Depends(auth.get_current_user)):
     logger.info(f"Menerima permintaan manual untuk update skor match_id: {match_id}")
@@ -80,7 +76,6 @@ def get_match_prediction(match_id: int, db: Session = Depends(get_db)):
     }
     return prediction_result
 
-# --- [ENDPOINT BARU] ---
 # Endpoint GET (Publik)
 @router.get("/status_overview", response_model=schemas.StatusOverview)
 def get_status_overview(db: Session = Depends(get_db)):
@@ -91,8 +86,7 @@ def get_status_overview(db: Session = Depends(get_db)):
     overview = crud.get_matches_status_overview(db)
     return overview
 
-# --- [ENDPOINT BARU] ---
-# Endpoint DELETE (Dilindungi)
+# --- [PERBAIKAN] Endpoint DELETE sekarang dilindungi ---
 @router.delete("/{match_id}", status_code=status.HTTP_200_OK)
 def delete_match(match_id: int, db: Session = Depends(get_db), current_user: schemas.User = Depends(auth.get_current_user)):
     """

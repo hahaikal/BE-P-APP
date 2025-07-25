@@ -4,6 +4,12 @@ python train_model.py
 **berishkan redis**
 docker-compose exec redis redis-cli FLUSHDB
 
+**cek redis**
+docker compose exec redis redis-cli
+KEYS *
+LLEN celery
+ZCARD unacked
+
 **mengambil data matches manual**
 docker compose exec worker celery -A app.tasks call app.tasks.discover_new_matches
 
