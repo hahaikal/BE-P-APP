@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session 
+from sqlalchemy.orm import Session
 
 from . import crud, schemas
 from .database import SessionLocal
@@ -34,7 +34,16 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# --- Fungsi get_db dipindahkan ke sini untuk menghindari circular import ---
+# --- [BARU] Logika otentikasi dipindahkan ke sini ---
+def authenticate_user(db: Session, username: str, password: str):
+    """Mencari user dan memverifikasi password."""
+    user = crud.get_user_by_username(db, username)
+    if not user:
+        return None
+    if not verify_password(password, user.hashed_password):
+        return None
+    return user
+
 def get_db():
     db = SessionLocal()
     try:

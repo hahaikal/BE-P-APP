@@ -1,6 +1,9 @@
 from sqlalchemy.orm import Session, joinedload
-from . import model, schemas, auth
+from . import model, schemas # <-- Menghapus 'import auth'
 from datetime import datetime, timezone
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_match_by_id(db: Session, match_id: int):
     return db.query(model.Match).filter(model.Match.id == match_id).first()
@@ -48,11 +51,6 @@ def update_match_scores(db: Session, match_id: int, scores: schemas.ScoreUpdate)
     return db_match
 
 def get_matches_status_overview(db: Session):
-    """
-    Mengambil semua pertandingan dan mengkategorikannya berdasarkan kelengkapan data
-    dengan logika yang sudah diperbarui.
-    """
-    
     all_matches = db.query(model.Match).options(
         joinedload(model.Match.odds_snapshots)
     ).all()
@@ -79,11 +77,6 @@ def get_matches_status_overview(db: Session):
     return overview
 
 def delete_match_by_id(db: Session, match_id: int):
-    """
-    Menghapus satu pertandingan dari database.
-    Data odds terkait akan terhapus secara otomatis oleh database (CASCADE).
-    """
-    
     db_match = db.query(model.Match).filter(model.Match.id == match_id).first()
     
     if db_match:
@@ -96,37 +89,24 @@ def delete_match_by_id(db: Session, match_id: int):
 def get_user_by_username(db: Session, username: str):
     return db.query(model.User).filter(model.User.username == username).first()
 
-def create_user(db: Session, user: schemas.UserCreate):
-    hashed_password = auth.get_password_hash(user.password)
+# --- [MODIFIKASI] ---
+# Fungsi ini sekarang menerima password yang sudah di-hash.
+# Ini hanya digunakan oleh skrip CLI, bukan oleh API secara langsung.
+def create_user(db: Session, user: schemas.UserCreate, hashed_password: str):
     db_user = model.User(username=user.username, hashed_password=hashed_password)
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user
 
-def authenticate_user(db: Session, username: str, password: str):
-    """Mencari user dan memverifikasi password."""
-    user = get_user_by_username(db, username)
-    if not user:
-        return False
-    if not auth.verify_password(password, user.hashed_password):
-        return False
-    return user
+# --- [DIHAPUS] ---
+# Fungsi authenticate_user dipindahkan sepenuhnya ke auth.py
 
 def delete_odds_snapshot_by_id(db: Session, odds_id: int):
     """
     Menghapus satu odds snapshot dari database berdasarkan ID-nya.
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    
     logger.info(f"Attempting to delete odds snapshot with ID: {odds_id}")
-    
-    # Count total records for debugging
-    total_records = db.query(model.OddsSnapshot).count()
-    logger.info(f"Total odds snapshots in database: {total_records}")
-    
-    # Check if the specific ID exists
     db_snapshot = db.query(model.OddsSnapshot).filter(model.OddsSnapshot.id == odds_id).first()
     
     if db_snapshot:
@@ -135,12 +115,6 @@ def delete_odds_snapshot_by_id(db: Session, odds_id: int):
         db.commit()
         return db_snapshot
     else:
-        # Get the closest IDs for debugging
-        closest = db.query(model.OddsSnapshot).filter(
-            model.OddsSnapshot.id >= max(1, odds_id - 5)
-        ).limit(10).all()
-        
-        available_ids = [s.id for s in closest]
-        logger.warning(f"Odds snapshot with ID {odds_id} not found. Available IDs near {odds_id}: {available_ids}")
+        logger.warning(f"Odds snapshot with ID {odds_id} not found in this session.")
         
     return None

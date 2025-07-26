@@ -19,3 +19,6 @@ docker compose exec worker celery -A app.tasks call app.tasks.record_odds_snapsh
 **masuk psql**
 docker exec -it p_app_postgres sh
 psql -U p_app_user -d p_app_db
+
+**jalankan script**
+dockercompose exec worker python reschedule_odds.py
