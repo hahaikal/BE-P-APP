@@ -61,7 +61,6 @@ def update_manual_score(match_id: int, scores: schemas.ScoreUpdate, db: Session 
     logger.info(f"✅ Skor berhasil diupdate untuk match {match_id}: {scores.result_home_score}-{scores.result_away_score}")
     return updated_match
 
-# Endpoint GET (Publik)
 @router.get("/{match_id}/prediction", response_model=schemas.PredictionOutput)
 def get_match_prediction(match_id: int, db: Session = Depends(get_db)):
     db_match = crud.get_match_by_id(db, match_id=match_id)
@@ -76,7 +75,6 @@ def get_match_prediction(match_id: int, db: Session = Depends(get_db)):
     }
     return prediction_result
 
-# Endpoint GET (Publik)
 @router.get("/status_overview", response_model=schemas.StatusOverview)
 def get_status_overview(db: Session = Depends(get_db)):
     """
@@ -86,7 +84,6 @@ def get_status_overview(db: Session = Depends(get_db)):
     overview = crud.get_matches_status_overview(db)
     return overview
 
-# --- [PERBAIKAN] Endpoint DELETE sekarang dilindungi ---
 @router.delete("/{match_id}", status_code=status.HTTP_200_OK)
 def delete_match(match_id: int, db: Session = Depends(get_db), current_user: schemas.User = Depends(auth.get_current_user)):
     """
