@@ -10,7 +10,7 @@ from redis import asyncio as aioredis
 
 from .database import engine
 from . import model
-from .routers import matches, auth
+from .routers import matches, auth, odds
 
 logging.basicConfig(level=logging.INFO)
 
@@ -93,6 +93,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(matches.router, prefix="/api/v1/matches")
+app.include_router(odds.router, prefix="/api/v1/odds")
 
 
 @app.get("/health", tags=["Monitoring"])
