@@ -8,7 +8,7 @@ import pytz
 
 from .. import crud, schemas, auth
 from ..database import get_db
-from ..utils.feature_engineering import process_odds_to_features # Impor utilitas baru
+from ..utils.feature_engineering import process_odds_to_features # Menggunakan utilitas yang sudah ada
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,6 +17,73 @@ router = APIRouter(
     tags=["Matches & Predictions"],
     responses={404: {"description": "Not found"}},
 )
+
+# Endpoint ini adalah implementasi BARU sesuai tugas
+@router.get("/{match_id}/prediction", response_model=schemas.PredictionOutput)
+def get_match_prediction(match_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Memberikan prediksi hasil pertandingan menggunakan model yang sudah dilatih.
+    """
+    logger.info(f"Menerima permintaan prediksi untuk match_id: {match_id}")
+    
+    # 1. Periksa apakah model dan artefak sudah dimuat dari main.py
+    model = request.app.state.model
+    encoder = request.app.state.encoder
+    feature_columns = request.app.state.feature_columns
+
+    if not all([model, encoder, feature_columns]):
+        logger.error("Model atau artefak lainnya tidak dimuat. Prediksi tidak tersedia.")
+        raise HTTPException(status_code=503, detail="Prediction service is currently unavailable.")
+
+    # 2. Ambil data pertandingan dari DB
+    db_match = crud.get_match_by_id(db, match_id=match_id)
+    if db_match is None:
+        raise HTTPException(status_code=404, detail="Match not found")
+    
+    # 3. Ambil 3 snapshot odds terakhir (atau lebih jika ada, lalu urutkan)
+    # Menggunakan lazy-loaded relationship `odds_snapshots` dari model SQLAlchemy
+    if len(db_match.odds_snapshots) < 3:
+        raise HTTPException(status_code=400, detail=f"Not enough odds data ({len(db_match.odds_snapshots)} found), 3 required for prediction.")
+
+    # Urutkan snapshot dari yang terbaru ke terlama
+    snapshots = sorted(db_match.odds_snapshots, key=lambda s: s.timestamp, reverse=True)[:3]
+
+    # 4. Lakukan Feature Engineering menggunakan utilitas terpusat
+    features_dict = process_odds_to_features(snapshots)
+    if not features_dict:
+        raise HTTPException(status_code=500, detail="Failed to process features from odds data.")
+        
+    features_df = pd.DataFrame([features_dict])
+    
+    # Pastikan urutan kolom sesuai dengan saat training
+    features_df = features_df.reindex(columns=feature_columns, fill_value=0)
+
+    # 5. Lakukan Prediksi
+    try:
+        probabilities = model.predict_proba(features_df)[0]
+        predicted_class_index = probabilities.argmax()
+        predicted_outcome = encoder.inverse_transform([predicted_class_index])[0]
+    except Exception as e:
+        logger.error(f"Error during prediction for match_id {match_id}: {e}")
+        raise HTTPException(status_code=500, detail="Could not process prediction.")
+
+    # 6. Format Hasil sesuai skema PredictionOutput
+    prob_dict = {encoder.classes_[i]: float(probabilities[i]) for i in range(len(encoder.classes_))}
+
+    prediction_result = {
+        "match_id": match_id,
+        "home_team": db_match.home_team,
+        "away_team": db_match.away_team,
+        "predicted_outcome": predicted_outcome,
+        "probabilities": {
+            "home_win": prob_dict.get("HOME_WIN", 0.0),
+            "draw": prob_dict.get("DRAW", 0.0),
+            "away_win": prob_dict.get("AWAY_WIN", 0.0)
+        }
+    }
+    
+    logger.info(f"Prediksi untuk match {match_id} berhasil: {predicted_outcome}")
+    return prediction_result
 
 # ... (Endpoint lain seperti read_matches, create_manual_match, dll. tetap sama) ...
 @router.get("/", response_model=list[schemas.Match])

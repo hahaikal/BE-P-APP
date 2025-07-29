@@ -1,160 +1,70 @@
 import pandas as pd
-from datetime import timedelta
-from typing import List
-from .. import model # Menggunakan model SQLAlchemy
+from typing import List, Dict, Any
+from .. import model # Menggunakan model.OddsSnapshot
 
-def select_time_bucketed_snapshots(snapshots: List[model.OddsSnapshot], match_time: pd.Timestamp) -> List[model.OddsSnapshot]:
+def process_odds_to_features(snapshots: List[model.OddsSnapshot]) -> Dict[str, Any]:
     """
-    Memilih hingga 3 snapshot yang paling mendekati T-60, T-20, dan T-5 menit.
-    Ini memastikan kita mendapatkan data dari titik-titik waktu yang paling relevan.
-    
-    Args:
-        snapshots: Daftar objek OddsSnapshot dari database.
-        match_time: Waktu kick-off pertandingan.
-
-    Returns:
-        Daftar snapshot yang telah dipilih dan diurutkan.
-    """
-    if not snapshots:
-        return []
-
-    # Tentukan target waktu kita
-    target_times = {
-        "t_minus_60": match_time - timedelta(minutes=60),
-        "t_minus_20": match_time - timedelta(minutes=20),
-        "t_minus_5": match_time - timedelta(minutes=5),
-    }
-
-    selected_snapshots = {}
-    for key, target_time in target_times.items():
-        # Cari snapshot dengan selisih waktu absolut terkecil ke target
-        best_snapshot = min(
-            snapshots, 
-            key=lambda s: abs(s.timestamp - target_time)
-        )
-        # Gunakan ID snapshot untuk memastikan keunikan jika satu snapshot paling dekat dengan beberapa target
-        selected_snapshots[best_snapshot.id] = best_snapshot
-
-    # Kembalikan daftar snapshot unik yang sudah diurutkan berdasarkan waktu
-    return sorted(list(selected_snapshots.values()), key=lambda s: s.timestamp)
-
-
-def process_odds_to_features(snapshots: List[model.OddsSnapshot]) -> dict:
-    """
-    Memproses daftar 1 hingga 3 snapshot odds menjadi fitur-fitur machine learning.
-    Ini adalah inti dari feature engineering kita.
+    Mengubah 3 odds snapshot terakhir menjadi satu baris fitur untuk prediksi.
+    Fungsi ini dirancang untuk dipanggil dari endpoint API.
 
     Args:
-        snapshots: Daftar 1-3 objek OddsSnapshot yang sudah dipilih.
+        snapshots (List[model.OddsSnapshot]): Daftar berisi 3 objek OddsSnapshot,
+                                             diurutkan dari yang terbaru ke terlama.
 
     Returns:
-        Sebuah dictionary yang berisi fitur-fitur yang siap dipakai model.
+        Dict[str, Any]: Dictionary yang berisi fitur-fitur yang telah dihitung.
     """
-    features = {}
+    if len(snapshots) < 3:
+        return {}
+
+    # Asumsi: snapshots[0] adalah T-5, snapshots[1] adalah T-20, snapshots[2] adalah T-60
+    # Ini karena kita mengambil 3 terakhir dan diurutkan secara descending dari DB.
+    try:
+        raw_data = {
+            "h_t60": snapshots[2].price_home, "d_t60": snapshots[2].price_draw, "a_t60": snapshots[2].price_away,
+            "h_t20": snapshots[1].price_home, "d_t20": snapshots[1].price_draw, "a_t20": snapshots[1].price_away,
+            "h_t5":  snapshots[0].price_home, "d_t5":  snapshots[0].price_draw, "a_t5":  snapshots[0].price_away,
+        }
+        df = pd.DataFrame([raw_data])
+    except IndexError:
+        return {}
+
+    # 1. Hitung probabilitas implisit untuk setiap time bucket
+    for t in [60, 20, 5]:
+        h_col, d_col, a_col = f'h_t{t}', f'd_t{t}', f'a_t{t}'
+        h_prob_col, d_prob_col, a_prob_col = f'h_prob_t{t}', f'd_prob_t{t}', f'a_prob_t{t}'
+        
+        prob_h = 1 / df[h_col]
+        prob_d = 1 / df[d_col]
+        prob_a = 1 / df[a_col]
+        total_prob = prob_h + prob_d + prob_a
+        
+        df[h_prob_col] = prob_h / total_prob
+        df[d_prob_col] = prob_d / total_prob
+        df[a_prob_col] = prob_a / total_prob
+
+    # 2. Hitung Pergerakan Odds (Delta) antara T-60 dan T-5
+    df['delta_h_60_5'] = df['h_t5'] - df['h_t60']
+    df['delta_d_60_5'] = df['d_t5'] - df['d_t60']
+    df['delta_a_60_5'] = df['a_t5'] - df['a_t60']
+
+    # 3. Hitung Pergerakan Probabilitas (Delta) antara T-60 dan T-5
+    df['delta_prob_h_60_5'] = df['h_prob_t5'] - df['h_prob_t60']
+    df['delta_prob_d_60_5'] = df['d_prob_t5'] - df['d_prob_t60']
+    df['delta_prob_a_60_5'] = df['a_prob_t5'] - df['a_prob_t60']
+
+    # 4. Hitung Volatilitas (standar deviasi dari odds)
+    df['volatility_h'] = df[[f'h_t{t}' for t in [60, 20, 5]]].std(axis=1)
+    df['volatility_d'] = df[[f'd_t{t}' for t in [60, 20, 5]]].std(axis=1)
+    df['volatility_a'] = df[[f'a_t{t}' for t in [60, 20, 5]]].std(axis=1)
     
-    # Pastikan snapshot diurutkan berdasarkan waktu untuk konsistensi
-    snapshots.sort(key=lambda s: s.timestamp)
-
-    def safe_float(value):
-        """Convert None or invalid values to 0.0"""
-        if value is None or pd.isna(value):
-            return 0.0
-        return float(value)
-
-    # Fungsi helper untuk menghitung probabilitas implisit dari odds
-    def get_implied_prob(s):
-        # Menghindari pembagian dengan nol jika odds tidak valid atau NaN
-        price_home = safe_float(s.price_home)
-        price_draw = safe_float(s.price_draw)
-        price_away = safe_float(s.price_away)
-        
-        if price_home == 0 or price_draw == 0 or price_away == 0:
-            return 0.0
-        return (1/price_home) + (1/price_draw) + (1/price_away)
-
-    # Fitur dari snapshot terbaru (s3)
-    if len(snapshots) > 0:
-        s_latest = snapshots[-1]
-        features['h_odds_s3'] = safe_float(s_latest.price_home)
-        features['d_odds_s3'] = safe_float(s_latest.price_draw)
-        features['a_odds_s3'] = safe_float(s_latest.price_away)
-        features['imp_prob_s3'] = get_implied_prob(s_latest)
-    else:
-        features['h_odds_s3'] = 0.0
-        features['d_odds_s3'] = 0.0
-        features['a_odds_s3'] = 0.0
-        features['imp_prob_s3'] = 0.0
-
-    # Fitur dari snapshot kedua terakhir (s2)
-    if len(snapshots) > 1:
-        s_mid = snapshots[-2]
-        features['h_odds_s2'] = safe_float(s_mid.price_home)
-        features['d_odds_s2'] = safe_float(s_mid.price_draw)
-        features['a_odds_s2'] = safe_float(s_mid.price_away)
-        features['imp_prob_s2'] = get_implied_prob(s_mid)
-        
-        # Fitur Delta: Pergerakan odds antara s2 dan s3
-        features['delta_h_s3_s2'] = features['h_odds_s3'] - features['h_odds_s2']
-        features['delta_d_s3_s2'] = features['d_odds_s3'] - features['d_odds_s2']
-        features['delta_a_s3_s2'] = features['a_odds_s3'] - features['a_odds_s2']
-    else:
-        features['h_odds_s2'] = 0.0
-        features['d_odds_s2'] = 0.0
-        features['a_odds_s2'] = 0.0
-        features['imp_prob_s2'] = 0.0
-        features['delta_h_s3_s2'] = 0.0
-        features['delta_d_s3_s2'] = 0.0
-        features['delta_a_s3_s2'] = 0.0
-
-    # Fitur dari snapshot paling awal (s1)
-    if len(snapshots) > 2:
-        s_first = snapshots[-3]
-        features['h_odds_s1'] = safe_float(s_first.price_home)
-        features['d_odds_s1'] = safe_float(s_first.price_draw)
-        features['a_odds_s1'] = safe_float(s_first.price_away)
-        features['imp_prob_s1'] = get_implied_prob(s_first)
-
-        # Fitur Delta: Pergerakan odds antara s1 dan s2
-        features['delta_h_s2_s1'] = features['h_odds_s2'] - features['h_odds_s1']
-        features['delta_d_s2_s1'] = features['d_odds_s2'] - features['d_odds_s1']
-        features['delta_a_s2_s1'] = features['a_odds_s2'] - features['a_odds_s1']
-
-        # Fitur Volatilitas: Seberapa stabil pergerakan odds
-        all_h_odds = [safe_float(s.price_home) for s in snapshots]
-        all_d_odds = [safe_float(s.price_draw) for s in snapshots]
-        all_a_odds = [safe_float(s.price_away) for s in snapshots]
-        
-        # Handle NaN in std() by using fillna(0.0) and checking for NaN
-        vol_h = pd.Series(all_h_odds).std()
-        vol_d = pd.Series(all_d_odds).std()
-        vol_a = pd.Series(all_a_odds).std()
-        
-        features['volatility_h'] = 0.0 if pd.isna(vol_h) else vol_h
-        features['volatility_d'] = 0.0 if pd.isna(vol_d) else vol_d
-        features['volatility_a'] = 0.0 if pd.isna(vol_a) else vol_a
-    else:
-        features['h_odds_s1'] = 0.0
-        features['d_odds_s1'] = 0.0
-        features['a_odds_s1'] = 0.0
-        features['imp_prob_s1'] = 0.0
-        features['delta_h_s2_s1'] = 0.0
-        features['delta_d_s2_s1'] = 0.0
-        features['delta_a_s2_s1'] = 0.0
-        features['volatility_h'] = 0.0
-        features['volatility_d'] = 0.0
-        features['volatility_a'] = 0.0
-
-    return features
-
-def get_target(match: model.Match) -> str:
-    """
-    Menentukan hasil akhir pertandingan (target variable) dari skor.
-    """
-    if match.result_home_score is None or match.result_away_score is None:
-        return "UNKNOWN"
-    if match.result_home_score > match.result_away_score:
-        return "HOME_WIN"
-    elif match.result_home_score < match.result_away_score:
-        return "AWAY_WIN"
-    else:
-        return "DRAW"
+    # 5. Fitur Final: Odds dan Probabilitas terakhir (T-5) dianggap paling relevan
+    df['final_odds_h'] = df['h_t5']
+    df['final_odds_d'] = df['d_t5']
+    df['final_odds_a'] = df['a_t5']
+    df['final_prob_h'] = df['h_prob_t5']
+    df['final_prob_d'] = df['d_prob_t5']
+    df['final_prob_a'] = df['a_prob_t5']
+    
+    # Mengembalikan baris pertama dari DataFrame sebagai dictionary
+    return df.to_dict(orient='records')[0]
