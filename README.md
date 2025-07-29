@@ -2,7 +2,7 @@
 python train_model.py
 
 **berishkan redis**
-docker-compose exec redis redis-cli FLUSHDB
+docker compose exec redis redis-cli FLUSHDB
 
 **cek redis**
 docker compose exec redis redis-cli
@@ -21,4 +21,4 @@ docker exec -it p_app_postgres sh
 psql -U p_app_user -d p_app_db
 
 **jalankan script**
-dockercompose exec worker python reschedule_odds.py
+docker compose exec worker python reschedule_odds.py

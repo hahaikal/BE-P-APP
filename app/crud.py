@@ -102,19 +102,40 @@ def create_user(db: Session, user: schemas.UserCreate, hashed_password: str):
 # --- [DIHAPUS] ---
 # Fungsi authenticate_user dipindahkan sepenuhnya ke auth.py
 
-def delete_odds_snapshot_by_id(db: Session, odds_id: int):
+def delete_odds_snapshot_by_id(db: Session, id: int):
     """
     Menghapus satu odds snapshot dari database berdasarkan ID-nya.
     """
-    logger.info(f"Attempting to delete odds snapshot with ID: {odds_id}")
-    db_snapshot = db.query(model.OddsSnapshot).filter(model.OddsSnapshot.id == odds_id).first()
+    print(f"=== DEBUG DELETE START ===")
+    print(f"Attempting to delete odds snapshot with ID: {id}")
+    
+    # Debug: Cek total records
+    total_records = db.query(model.OddsSnapshot).count()
+    print(f"Total odds snapshots in database: {total_records}")
+    
+    # Debug: Cek ID yang tersedia (ambil 10 terakhir)
+    recent_ids = db.query(model.OddsSnapshot.id).order_by(model.OddsSnapshot.id.desc()).limit(10).all()
+    print(f"Recent IDs: {[id[0] for id in recent_ids]}")
+    
+    # Debug: Query spesifik untuk ID yang diminta
+    db_snapshot = db.query(model.OddsSnapshot).filter(model.OddsSnapshot.id == id).first()
     
     if db_snapshot:
-        logger.info(f"Found odds snapshot: ID={db_snapshot.id}, bookmaker={db_snapshot.bookmaker}, match_id={db_snapshot.match_id}")
+        print(f"✅ FOUND: ID={db_snapshot.id}, bookmaker={db_snapshot.bookmaker}, match_id={db_snapshot.match_id}")
+        print(f"   price_home={db_snapshot.price_home}, price_draw={db_snapshot.price_draw}, price_away={db_snapshot.price_away}")
+        print(f"   timestamp={db_snapshot.timestamp}")
+        
+        # Debug: Cek match yang terkait
+        match = db.query(model.Match).filter(model.Match.id == db_snapshot.match_id).first()
+        if match:
+            print(f"   Related match: {match.home_team} vs {match.away_team}")
+        
         db.delete(db_snapshot)
         db.commit()
+        print(f"✅ Successfully deleted odds snapshot ID: {id}")
         return db_snapshot
     else:
-        logger.warning(f"Odds snapshot with ID {odds_id} not found in this session.")
+        print(f"❌ Odds snapshot with ID {id} not found in this session.")
+        print(f"=== DEBUG DELETE END ===")
         
     return None
