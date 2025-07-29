@@ -17,10 +17,17 @@ logging.basicConfig(level=logging.INFO)
 import asyncio
 from sqlalchemy.exc import OperationalError
 
+# --- PERBAIKAN: Definisikan path artefak secara terpusat ---
+ARTIFACTS_DIR = "/app/artifacts" # Path absolut di dalam kontainer Docker
+MODEL_PATH = os.path.join(ARTIFACTS_DIR, "trained_model.joblib")
+ENCODER_PATH = os.path.join(ARTIFACTS_DIR, "label_encoder.joblib")
+FEATURES_PATH = os.path.join(ARTIFACTS_DIR, "feature_columns.joblib")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.info("Memulai aplikasi...")
 
+    # ... (logika koneksi DB tetap sama) ...
     max_retries = 10
     retry_delay = 3  
     for attempt in range(max_retries):
@@ -39,6 +46,7 @@ async def lifespan(app: FastAPI):
         logging.error("Gagal membuat tabel database setelah beberapa kali percobaan.")
         raise RuntimeError("Database tidak tersedia.")
 
+    # ... (logika koneksi Redis tetap sama) ...
     try:
         redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
         redis = aioredis.from_url(redis_url)
@@ -47,14 +55,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.error(f"Gagal terhubung ke Redis: {e}")
 
+    # --- PERBAIKAN: Gunakan path yang sudah didefinisikan ---
     try:
         logging.info("Mencoba memuat artefak model Machine Learning...")
-        app.state.model = joblib.load("artifacts/trained_model.joblib")
-        app.state.encoder = joblib.load("artifacts/label_encoder.joblib")
-        app.state.feature_columns = joblib.load("artifacts/feature_columns.joblib")
+        app.state.model = joblib.load(MODEL_PATH)
+        app.state.encoder = joblib.load(ENCODER_PATH)
+        app.state.feature_columns = joblib.load(FEATURES_PATH)
         logging.info("✅ Model, Encoder, dan Kolom Fitur berhasil dimuat.")
     except FileNotFoundError:
-        logging.warning("⚠️ File model tidak ditemukan. Aplikasi akan berjalan tanpa kemampuan prediksi.")
+        logging.warning("⚠️ File model tidak ditemukan. Jalankan 'train_model.py' terlebih dahulu. Aplikasi akan berjalan tanpa kemampuan prediksi.")
         app.state.model = None
         app.state.encoder = None
         app.state.feature_columns = None
@@ -77,7 +86,7 @@ app = FastAPI(
 )
 
 origins = [
-    "http://localhost:3000",  # URL Frontend Anda
+    "http://localhost:3000",
     "http://localhost:5173",  
     "http://127.0.0.1:5173", 
     "http://localhost",
@@ -98,7 +107,4 @@ app.include_router(odds.router, prefix="/api/v1/odds")
 
 @app.get("/health", tags=["Monitoring"])
 def health_check():
-    """
-    Endpoint untuk memeriksa apakah layanan API berjalan dengan baik.
-    """
     return {"status": "ok", "message": "P-APP Backend service is up and running"}
