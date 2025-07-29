@@ -1,5 +1,5 @@
 **model train**
-python train_model.py
+docker compose run --rm -e POSTGRES_USER=p_app_user -e POSTGRES_PASSWORD=p_app_password -e POSTGRES_DB=p_app_db api python train_model.py
 
 **berishkan redis**
 docker compose exec redis redis-cli FLUSHDB
@@ -20,5 +20,5 @@ docker compose exec worker celery -A app.tasks call app.tasks.record_odds_snapsh
 docker exec -it p_app_postgres sh
 psql -U p_app_user -d p_app_db
 
-**jalankan script**
+**jalankan script ambil odds**
 docker compose exec worker python reschedule_odds.py

@@ -11,6 +11,7 @@ import mlflow
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 import logging
+import time
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,15 +19,20 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Muat environment variables
 load_dotenv()
 
-# Konfigurasi dari environment variables
+# --- PERBAIKAN: Validasi environment variables ---
 DB_USER = os.getenv("POSTGRES_USER")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 DB_NAME = os.getenv("POSTGRES_DB")
 DB_HOST = "postgres"  # Nama service di docker-compose
 DB_PORT = "5432"
+
+if not all([DB_USER, DB_PASSWORD, DB_NAME]):
+    logging.error("FATAL: Variabel lingkungan database (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB) tidak diatur. Pastikan file .env Anda ada dan sudah benar.")
+    exit(1) # Keluar dari skrip jika variabel penting tidak ada
+
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-# --- PERBAIKAN: Definisikan path artefak secara terpusat ---
+# Definisikan path artefak secara terpusat
 ARTIFACTS_DIR = "/app/artifacts"
 MODEL_PATH = os.path.join(ARTIFACTS_DIR, "trained_model.joblib")
 ENCODER_PATH = os.path.join(ARTIFACTS_DIR, "label_encoder.joblib")
@@ -51,6 +57,8 @@ def get_training_data(engine):
                 ELSE 'DRAW'
             END as result,
             s.price_home, s.price_draw, s.price_away,
+            s.timestamp,
+            m.commence_time,
             -- Beri peringkat pada setiap snapshot berdasarkan kedekatannya dengan target waktu
             ROW_NUMBER() OVER(PARTITION BY m.id ORDER BY ABS(EXTRACT(EPOCH FROM (m.commence_time - s.timestamp)) / 60 - 60)) as rn_60,
             ROW_NUMBER() OVER(PARTITION BY m.id ORDER BY ABS(EXTRACT(EPOCH FROM (m.commence_time - s.timestamp)) / 60 - 20)) as rn_20,
@@ -128,10 +136,15 @@ def create_features_for_training(df: pd.DataFrame) -> pd.DataFrame:
         'delta_prob_h_60_5', 'delta_prob_d_60_5', 'delta_prob_a_60_5',
         'volatility_h', 'volatility_d', 'volatility_a'
     ]
-    return df[feature_columns]
+    return df, feature_columns
 
 def main():
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
+    
+    # --- PERBAIKAN: Beri jeda sebelum koneksi DB ---
+    logging.info("Menunggu database siap...")
+    time.sleep(5) 
+    
     engine = create_engine(DATABASE_URL)
     
     mlflow.set_experiment("P-APP Prediction Model v1")
@@ -144,8 +157,11 @@ def main():
             return
             
         y = raw_data['result']
-        X = create_features_for_training(raw_data)
+        X_raw = raw_data.drop(columns=['match_id', 'result'])
+        X, feature_names = create_features_for_training(X_raw)
         
+        logging.info(f"Feature engineering selesai. {len(feature_names)} fitur dibuat.")
+
         # 2. Encode Target
         encoder = LabelEncoder()
         y_encoded = encoder.fit_transform(y)
@@ -156,7 +172,7 @@ def main():
         )
         
         # 4. Latih Model
-        model = LogisticRegression(random_state=42, class_weight='balanced')
+        model = LogisticRegression(random_state=42, class_weight='balanced', max_iter=1000)
         model.fit(X_train, y_train)
         
         # 5. Evaluasi
@@ -172,7 +188,7 @@ def main():
         # 7. Simpan Artefak
         joblib.dump(model, MODEL_PATH)
         joblib.dump(encoder, ENCODER_PATH)
-        joblib.dump(list(X.columns), FEATURES_PATH)
+        joblib.dump(feature_names, FEATURES_PATH)
         logging.info(f"Model dan artefak berhasil disimpan di {ARTIFACTS_DIR}")
 
 if __name__ == "__main__":
