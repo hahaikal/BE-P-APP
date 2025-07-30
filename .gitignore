@@ -27,6 +27,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 artifacts/
+backup_2025-07-29.sql
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

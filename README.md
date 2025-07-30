@@ -22,3 +22,6 @@ psql -U p_app_user -d p_app_db
 
 **jalankan script ambil odds**
 docker compose exec worker python reschedule_odds.py
+
+**bersihkan data lama**
+docker compose run --rm api python cleanup_old_data.py

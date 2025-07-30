@@ -1,6 +1,49 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
+
+class OddsSnapshotBase(BaseModel):
+    bookmaker: str
+    price_home: float
+    price_draw: float
+    price_away: float
+    handicap_line: Optional[float] = None
+    handicap_price_home: Optional[float] = None
+    handicap_price_away: Optional[float] = None
+
+class OddsSnapshotCreate(OddsSnapshotBase):
+    pass
+
+class OddsSnapshot(OddsSnapshotBase):
+    id: int
+    match_id: int
+    timestamp: datetime
+
+    class Config:
+        orm_mode = True
+
+class MatchBase(BaseModel):
+    api_id: str
+    sport_key: str
+    sport_title: str
+    commence_time: datetime
+    home_team: str
+    away_team: str
+
+class MatchCreate(MatchBase):
+    pass
+
+class Match(MatchBase):
+    id: int
+    result_home_score: Optional[int] = None
+    result_away_score: Optional[int] = None
+    odds_snapshots: List[OddsSnapshot] = []
+
+    class Config:
+        orm_mode = True
+
+
+# --- User & Auth Schemas ---
 
 class UserBase(BaseModel):
     username: str
@@ -10,10 +53,9 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
-    is_active: bool
 
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 class Token(BaseModel):
     access_token: str
@@ -22,60 +64,28 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
-class OddsSnapshotBase(BaseModel):
-    bookmaker: str
-    price_home: float
-    price_draw: float
-    price_away: float
 
-class OddsSnapshotCreate(OddsSnapshotBase):
-    pass
+# --- Schemas for Manual Operations & Predictions ---
 
-class ManualOddsSnapshotCreate(OddsSnapshotBase):
-    snapshot_time: str = Field(
-        ..., 
-        description="Waktu snapshot dalam format HH:MM, contoh: '19:00'",
-        example="19:00"
-    )
-    snapshot_timezone: str = Field(
-        "Asia/Jakarta", 
-        description="Timezone dari waktu yang dimasukkan (IANA format)",
-        example="Asia/Jakarta"
-    )
-
-class OddsSnapshot(OddsSnapshotBase):
-    id: int
-    match_id: int
-    timestamp: datetime
-
-    class Config:
-        from_attributes = True 
-
-class MatchBase(BaseModel):
-    sport_key: str
+class ManualMatchCreate(BaseModel):
     home_team: str
     away_team: str
     commence_time: datetime
-
-class ManualMatchCreate(MatchBase):
     api_id: Optional[str] = None
+    sport_key: str = "soccer_epl" # Default value
+    sport_title: str = "EPL" # Default value
 
-class MatchCreate(MatchBase):
-    api_id: str
+class ManualOddsSnapshotCreate(BaseModel):
+    bookmaker: str = "manual"
+    price_home: float
+    price_draw: float
+    price_away: float
+    snapshot_time: str # Format "HH:MM"
+    snapshot_timezone: str = "Asia/Jakarta" # Default timezone
 
 class ScoreUpdate(BaseModel):
     result_home_score: int
     result_away_score: int
-
-class Match(MatchBase):
-    id: int
-    api_id: str
-    result_home_score: Optional[int] = None
-    result_away_score: Optional[int] = None
-    odds_snapshots: list[OddsSnapshot] = []
-
-    class Config:
-        from_attributes = True 
 
 class PredictionOutput(BaseModel):
     match_id: int
