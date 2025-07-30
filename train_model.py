@@ -14,10 +14,13 @@ from sqlalchemy import create_engine
 import logging
 import time
 
+# Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Muat environment variables
 load_dotenv()
 
+# Konfigurasi dari environment variables
 DB_USER = os.getenv("POSTGRES_USER")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 DB_NAME = os.getenv("POSTGRES_DB")
@@ -30,6 +33,7 @@ if not all([DB_USER, DB_PASSWORD, DB_NAME]):
 
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+# Definisikan path artefak
 ARTIFACTS_DIR = "/app/artifacts"
 MODEL_PATH = os.path.join(ARTIFACTS_DIR, "trained_model.joblib")
 ENCODER_PATH = os.path.join(ARTIFACTS_DIR, "label_encoder.joblib")
@@ -88,17 +92,13 @@ def get_training_data(engine):
     """
     df = pd.read_sql(query, engine)
     logging.info(f"Ditemukan {len(df)} baris data training mentah.")
-    
-    df_clean = df.dropna(subset=[col for col in df.columns if 'hcap' in col])
-    logging.info(f"Ditemukan {len(df_clean)} baris data dengan data handicap lengkap.")
-    
-    return df_clean
+    return df
 
-def create_features_for_training(df: pd.DataFrame) -> (pd.DataFrame, list):
+def create_features_for_training(df: pd.DataFrame, use_handicap: bool) -> (pd.DataFrame, list):
     """
-    Membuat fitur dari data mentah H2H dan Handicap.
+    Membuat fitur dari data mentah. Bisa dengan atau tanpa fitur handicap.
     """
-    
+    # Fitur H2H (selalu dibuat)
     for t in [60, 20, 5]:
         prob_h = 1 / df[f'h2h_h_t{t}']
         prob_d = 1 / df[f'h2h_d_t{t}']
@@ -115,54 +115,75 @@ def create_features_for_training(df: pd.DataFrame) -> (pd.DataFrame, list):
     df['h2h_volatility_d'] = df[[f'h2h_d_t{t}' for t in [60, 20, 5]]].std(axis=1)
     df['h2h_volatility_a'] = df[[f'h2h_a_t{t}' for t in [60, 20, 5]]].std(axis=1)
 
-    df['final_handicap_line'] = df['hcap_line_t5'] 
-    df['delta_handicap_line_60_5'] = df['hcap_line_t5'] - df['hcap_line_t60']
-
-    for t in [60, 20, 5]:
-        prob_h = 1 / df[f'hcap_h_t{t}']
-        prob_a = 1 / df[f'hcap_a_t{t}']
-        total_prob = prob_h + prob_a
-        df[f'hcap_prob_h_t{t}'] = prob_h / total_prob
-        df[f'hcap_prob_a_t{t}'] = prob_a / total_prob
-
-    df['hcap_volatility_h'] = df[[f'hcap_h_t{t}' for t in [60, 20, 5]]].std(axis=1)
-    df['hcap_volatility_a'] = df[[f'hcap_a_t{t}' for t in [60, 20, 5]]].std(axis=1)
-
-    feature_columns = [
+    base_feature_columns = [
         'h2h_h_t5', 'h2h_d_t5', 'h2h_a_t5',
         'h2h_prob_h_t5', 'h2h_prob_d_t5', 'h2h_prob_a_t5',
         'h2h_delta_h_60_5', 'h2h_delta_d_60_5', 'h2h_delta_a_60_5',
         'h2h_volatility_h', 'h2h_volatility_d', 'h2h_volatility_a',
-        'final_handicap_line',
-        'delta_handicap_line_60_5',
-        'hcap_prob_h_t5', 'hcap_prob_a_t5',
-        'hcap_volatility_h', 'hcap_volatility_a'
     ]
     
-    return df[feature_columns], feature_columns
+    if use_handicap:
+        # Fitur dari Asian Handicap
+        df['final_handicap_line'] = df['hcap_line_t5']
+        df['delta_handicap_line_60_5'] = df['hcap_line_t5'] - df['hcap_line_t60']
+
+        for t in [60, 20, 5]:
+            prob_h = 1 / df[f'hcap_h_t{t}']
+            prob_a = 1 / df[f'hcap_a_t{t}']
+            total_prob = prob_h + prob_a
+            df[f'hcap_prob_h_t{t}'] = prob_h / total_prob
+            df[f'hcap_prob_a_t{t}'] = prob_a / total_prob
+
+        df['hcap_volatility_h'] = df[[f'hcap_h_t{t}' for t in [60, 20, 5]]].std(axis=1)
+        df['hcap_volatility_a'] = df[[f'hcap_a_t{t}' for t in [60, 20, 5]]].std(axis=1)
+
+        handicap_feature_columns = [
+            'final_handicap_line', 'delta_handicap_line_60_5',
+            'hcap_prob_h_t5', 'hcap_prob_a_t5',
+            'hcap_volatility_h', 'hcap_volatility_a'
+        ]
+        feature_columns = base_feature_columns + handicap_feature_columns
+        return df[feature_columns], feature_columns
+    
+    return df[base_feature_columns], base_feature_columns
 
 def main():
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
-    
     logging.info("Menunggu database siap...")
     time.sleep(5) 
-    
     engine = create_engine(DATABASE_URL)
     
-    mlflow.set_experiment("P-APP Prediction Model v1.1")
-    with mlflow.start_run(run_name="Training LogisticRegression with Handicap Features"):
+    # --- LOGIKA BARU ---
+    raw_data = get_training_data(engine)
+    if raw_data.empty:
+        logging.error("Tidak ada data training sama sekali. Proses dihentikan.")
+        return
         
-        raw_data = get_training_data(engine)
-        if raw_data.empty:
-            logging.error("Tidak ada data training dengan handicap lengkap. Proses dihentikan.")
-            return
-            
-        y = raw_data['result']
-        X_raw = raw_data.drop(columns=['match_id', 'result'])
-        X, feature_names = create_features_for_training(X_raw)
+    # Cek apakah ada data handicap yang bisa digunakan
+    handicap_cols = [col for col in raw_data.columns if 'hcap' in col]
+    data_with_handicap = raw_data.dropna(subset=handicap_cols)
+    
+    use_handicap_features = not data_with_handicap.empty
+    
+    if use_handicap_features:
+        logging.info(f"Ditemukan {len(data_with_handicap)} baris dengan data handicap lengkap. Melatih model v1.1...")
+        training_data = data_with_handicap
+        mlflow.set_experiment("P-APP Prediction Model v1.1")
+        run_name = "Training LogisticRegression with Handicap Features"
+    else:
+        logging.warning("Tidak ditemukan data handicap yang lengkap. Melatih model v1.0 (fallback)...")
+        training_data = raw_data
+        mlflow.set_experiment("P-APP Prediction Model v1.0")
+        run_name = "Training LogisticRegression (Fallback, No Handicap)"
+
+    with mlflow.start_run(run_name=run_name):
+        y = training_data['result']
+        X_raw = training_data.drop(columns=['match_id', 'result'])
+        X, feature_names = create_features_for_training(X_raw, use_handicap=use_handicap_features)
         
         logging.info(f"Feature engineering selesai. {len(feature_names)} fitur dibuat.")
         mlflow.log_param("features", feature_names)
+        mlflow.log_param("handicap_features_used", use_handicap_features)
 
         encoder = LabelEncoder()
         y_encoded = encoder.fit_transform(y)
@@ -181,16 +202,15 @@ def main():
         
         y_pred = pipeline.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
-        logging.info(f"Akurasi model v1.1: {accuracy:.4f}")
+        logging.info(f"Akurasi model: {accuracy:.4f}")
         
-        mlflow.log_param("model_type", "LogisticRegression_with_Handicap")
         mlflow.log_metric("accuracy", accuracy)
         mlflow.sklearn.log_model(pipeline, "model")
         
         joblib.dump(pipeline, MODEL_PATH)
         joblib.dump(encoder, ENCODER_PATH)
         joblib.dump(feature_names, FEATURES_PATH)
-        logging.info(f"Model v1.1 dan artefak berhasil disimpan di {ARTIFACTS_DIR}")
+        logging.info(f"Model dan artefak berhasil disimpan di {ARTIFACTS_DIR}")
 
 if __name__ == "__main__":
     main()

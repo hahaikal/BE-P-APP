@@ -2,11 +2,15 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import List, Optional
 
+# --- Odds Snapshot Schemas ---
+
 class OddsSnapshotBase(BaseModel):
     bookmaker: str
     price_home: float
     price_draw: float
     price_away: float
+
+    # Skema untuk Asian Handicap
     handicap_line: Optional[float] = None
     handicap_price_home: Optional[float] = None
     handicap_price_away: Optional[float] = None
@@ -20,12 +24,17 @@ class OddsSnapshot(OddsSnapshotBase):
     timestamp: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True # Mengganti orm_mode yang usang
+
+
+# --- Match Schemas ---
 
 class MatchBase(BaseModel):
     api_id: str
     sport_key: str
-    sport_title: str
+    # --- PERBAIKAN FINAL DI SINI ---
+    # Membuat sport_title menjadi opsional untuk menangani data lama yang bernilai NULL
+    sport_title: Optional[str] = None
     commence_time: datetime
     home_team: str
     away_team: str
@@ -40,7 +49,7 @@ class Match(MatchBase):
     odds_snapshots: List[OddsSnapshot] = []
 
     class Config:
-        orm_mode = True
+        from_attributes = True # Mengganti orm_mode yang usang
 
 
 # --- User & Auth Schemas ---
@@ -55,7 +64,7 @@ class User(UserBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class Token(BaseModel):
     access_token: str
@@ -72,16 +81,16 @@ class ManualMatchCreate(BaseModel):
     away_team: str
     commence_time: datetime
     api_id: Optional[str] = None
-    sport_key: str = "soccer_epl" # Default value
-    sport_title: str = "EPL" # Default value
+    sport_key: str = "soccer_epl"
+    sport_title: str = "EPL"
 
 class ManualOddsSnapshotCreate(BaseModel):
     bookmaker: str = "manual"
     price_home: float
     price_draw: float
     price_away: float
-    snapshot_time: str # Format "HH:MM"
-    snapshot_timezone: str = "Asia/Jakarta" # Default timezone
+    snapshot_time: str
+    snapshot_timezone: str = "Asia/Jakarta"
 
 class ScoreUpdate(BaseModel):
     result_home_score: int
@@ -99,3 +108,5 @@ class StatusOverview(BaseModel):
     incomplete: List[Match]
     empty: List[Match]
 
+    class Config:
+        from_attributes = True

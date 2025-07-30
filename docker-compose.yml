@@ -57,7 +57,7 @@ services:
       - DATABASE_URL=postgresql://p_app_user:p_app_password@postgres/p_app_db
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - THE_ODDS_API_KEY=260803d29804fc2d673c5a34449c43c5
+      - THE_ODDS_API_KEY=436f39c9f64c3a05160667b85227a5d8
       - TZ=Asia/Jakarta
 
   beat:
@@ -74,7 +74,7 @@ services:
       - DATABASE_URL=postgresql://p_app_user:p_app_password@postgres/p_app_db
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - THE_ODDS_API_KEY=260803d29804fc2d673c5a34449c43c5
+      - THE_ODDS_API_KEY=436f39c9f64c3a05160667b85227a5d8
       - TZ=Asia/Jakarta
 
 volumes:
