@@ -41,7 +41,6 @@ def record_odds_snapshot(match_db_id: int):
             logger.error(f"Match dengan ID database {match_db_id} tidak ditemukan.")
             return
 
-        # Logika untuk mencegah duplikasi snapshot tetap sama
         five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
         recent_snapshot = db.query(model.OddsSnapshot).filter(
             model.OddsSnapshot.match_id == match_db_id,
@@ -54,56 +53,72 @@ def record_odds_snapshot(match_db_id: int):
 
         logger.info(f"Mulai merekam odds untuk match: {match.home_team} vs {match.away_team} (api_id: {match.api_id})")
         
-        # --- PERBAIKAN KUNCI DI SINI ---
-        # Secara eksplisit meminta market 'h2h' dan 'spreads'
         match_odds_data = worker.fetch_odds_for_match(match.api_id, match.sport_key, markets="h2h,spreads")
 
         if not match_odds_data or not match_odds_data.get("bookmakers"):
             logger.warning(f"Tidak ada data odds atau bookmakers ditemukan untuk match api_id: {match.api_id}")
             return
 
-        bookmaker = match_odds_data["bookmakers"][0]
+        # --- LOGIKA PARSING BARU YANG LEBIH BAIK ---
+        best_bookmaker_data = None
         
-        # --- LOGIKA PARSING BARU UNTUK H2H & SPREADS ---
-        h2h_data = None
-        spreads_data = None
+        # Cari bookmaker yang punya data H2H dan Spreads
+        for bookmaker in match_odds_data.get("bookmakers", []):
+            markets = {market['key']: market['outcomes'] for market in bookmaker.get('markets', [])}
+            if 'h2h' in markets and 'spreads' in markets:
+                best_bookmaker_data = {
+                    "key": bookmaker['key'],
+                    "h2h": markets['h2h'],
+                    "spreads": markets['spreads']
+                }
+                logger.info(f"Bookmaker '{bookmaker['key']}' ditemukan dengan data H2H & Spreads.")
+                break # Ditemukan yang terbaik, keluar dari loop
 
-        for market in bookmaker.get("markets", []):
-            if market.get("key") == "h2h":
-                h2h_data = market.get("outcomes")
-            elif market.get("key") == "spreads":
-                spreads_data = market.get("outcomes")
+        # Jika tidak ada yang punya keduanya, cari yang punya H2H saja
+        if not best_bookmaker_data and match_odds_data.get("bookmakers"):
+            for bookmaker in match_odds_data.get("bookmakers", []):
+                markets = {market['key']: market['outcomes'] for market in bookmaker.get('markets', [])}
+                if 'h2h' in markets:
+                    best_bookmaker_data = {
+                        "key": bookmaker['key'],
+                        "h2h": markets['h2h'],
+                        "spreads": None # Tandai bahwa spreads tidak ada
+                    }
+                    logger.warning(f"Tidak ada bookmaker dengan data lengkap. Fallback ke '{bookmaker['key']}' dengan data H2H saja.")
+                    break
+        
+        # Jika data yang bisa diproses ditemukan
+        if best_bookmaker_data:
+            h2h_data = best_bookmaker_data['h2h']
+            spreads_data = best_bookmaker_data['spreads']
 
-        # Pastikan data H2H ada sebagai data dasar
-        if h2h_data and len(h2h_data) == 3:
-            price_home = next((o['price'] for o in h2h_data if o['name'] == match.home_team), 0.0)
-            price_away = next((o['price'] for o in h2h_data if o['name'] == match.away_team), 0.0)
-            price_draw = next((o['price'] for o in h2h_data if o.get('name') == "Draw"), 0.0)
+            if h2h_data and len(h2h_data) == 3:
+                price_home = next((o['price'] for o in h2h_data if o['name'] == match.home_team), 0.0)
+                price_away = next((o['price'] for o in h2h_data if o['name'] == match.away_team), 0.0)
+                price_draw = next((o['price'] for o in h2h_data if o.get('name') == "Draw"), 0.0)
 
-            # Siapkan data untuk disimpan
-            snapshot_data = {
-                "bookmaker": bookmaker["key"],
-                "price_home": price_home,
-                "price_draw": price_draw,
-                "price_away": price_away
-            }
+                snapshot_data = {
+                    "bookmaker": best_bookmaker_data["key"],
+                    "price_home": price_home, "price_draw": price_draw, "price_away": price_away
+                }
 
-            # Jika data handicap (spreads) ditemukan, tambahkan ke data yang akan disimpan
-            if spreads_data and len(spreads_data) == 2:
-                home_spread = next((s for s in spreads_data if s["name"] == match.home_team), None)
-                away_spread = next((s for s in spreads_data if s["name"] == match.away_team), None)
-                if home_spread and away_spread:
-                    snapshot_data["handicap_line"] = home_spread["point"]
-                    snapshot_data["handicap_price_home"] = home_spread["price"]
-                    snapshot_data["handicap_price_away"] = away_spread["price"]
-                    logger.info(f"Data handicap ditemukan untuk match_id {match_db_id}.")
+                if spreads_data and len(spreads_data) == 2:
+                    home_spread = next((s for s in spreads_data if s["name"] == match.home_team), None)
+                    away_spread = next((s for s in spreads_data if s["name"] == match.away_team), None)
+                    if home_spread and away_spread:
+                        snapshot_data["handicap_line"] = home_spread["point"]
+                        snapshot_data["handicap_price_home"] = home_spread["price"]
+                        snapshot_data["handicap_price_away"] = away_spread["price"]
+                        logger.info(f"Data handicap dari '{best_bookmaker_data['key']}' akan disimpan.")
 
-            snapshot_schema = schemas.OddsSnapshotCreate(**snapshot_data)
-            crud.create_odds_snapshot(db, odds_snapshot=snapshot_schema, match_id=match_db_id)
-            logger.info(f"✅ Berhasil merekam odds untuk match_db_id: {match_db_id}")
+                snapshot_schema = schemas.OddsSnapshotCreate(**snapshot_data)
+                crud.create_odds_snapshot(db, odds_snapshot=snapshot_schema, match_id=match_db_id)
+                logger.info(f"✅ Berhasil merekam odds untuk match_db_id: {match_db_id}")
+            else:
+                logger.warning(f"Data H2H tidak lengkap dari bookmaker terpilih untuk match api_id: {match.api_id}")
         else:
-            logger.warning(f"Market 'h2h' tidak ditemukan atau tidak lengkap untuk match api_id: {match.api_id}")
-            
+            logger.error(f"Tidak ada bookmaker dengan data H2H yang valid ditemukan untuk match api_id: {match.api_id}")
+
     except Exception as e:
         logger.error(f"Error tidak terduga saat merekam odds untuk match_id {match_db_id}: {e}", exc_info=True)
     finally:
