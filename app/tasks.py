@@ -34,9 +34,6 @@ TARGET_LEAGUES = [
 
 @celery.task(acks_late=True)
 def record_odds_snapshot(match_db_id: int):
-    """
-    Mengambil dan menyimpan satu snapshot odds (H2H & Spreads) untuk sebuah pertandingan.
-    """
     db = SessionLocal()
     try:
         match = db.query(model.Match).filter(model.Match.id == match_db_id).first()
@@ -44,6 +41,7 @@ def record_odds_snapshot(match_db_id: int):
             logger.error(f"Match dengan ID database {match_db_id} tidak ditemukan.")
             return
 
+        # Logika untuk mencegah duplikasi snapshot tetap sama
         five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
         recent_snapshot = db.query(model.OddsSnapshot).filter(
             model.OddsSnapshot.match_id == match_db_id,
@@ -56,6 +54,8 @@ def record_odds_snapshot(match_db_id: int):
 
         logger.info(f"Mulai merekam odds untuk match: {match.home_team} vs {match.away_team} (api_id: {match.api_id})")
         
+        # --- PERBAIKAN KUNCI DI SINI ---
+        # Secara eksplisit meminta market 'h2h' dan 'spreads'
         match_odds_data = worker.fetch_odds_for_match(match.api_id, match.sport_key, markets="h2h,spreads")
 
         if not match_odds_data or not match_odds_data.get("bookmakers"):
@@ -64,6 +64,7 @@ def record_odds_snapshot(match_db_id: int):
 
         bookmaker = match_odds_data["bookmakers"][0]
         
+        # --- LOGIKA PARSING BARU UNTUK H2H & SPREADS ---
         h2h_data = None
         spreads_data = None
 
@@ -73,29 +74,33 @@ def record_odds_snapshot(match_db_id: int):
             elif market.get("key") == "spreads":
                 spreads_data = market.get("outcomes")
 
+        # Pastikan data H2H ada sebagai data dasar
         if h2h_data and len(h2h_data) == 3:
             price_home = next((o['price'] for o in h2h_data if o['name'] == match.home_team), 0.0)
             price_away = next((o['price'] for o in h2h_data if o['name'] == match.away_team), 0.0)
             price_draw = next((o['price'] for o in h2h_data if o.get('name') == "Draw"), 0.0)
 
-            odds_info = {
+            # Siapkan data untuk disimpan
+            snapshot_data = {
                 "bookmaker": bookmaker["key"],
                 "price_home": price_home,
                 "price_draw": price_draw,
                 "price_away": price_away
             }
 
+            # Jika data handicap (spreads) ditemukan, tambahkan ke data yang akan disimpan
             if spreads_data and len(spreads_data) == 2:
                 home_spread = next((s for s in spreads_data if s["name"] == match.home_team), None)
                 away_spread = next((s for s in spreads_data if s["name"] == match.away_team), None)
                 if home_spread and away_spread:
-                    odds_info["handicap_line"] = home_spread["point"]
-                    odds_info["handicap_price_home"] = home_spread["price"]
-                    odds_info["handicap_price_away"] = away_spread["price"]
+                    snapshot_data["handicap_line"] = home_spread["point"]
+                    snapshot_data["handicap_price_home"] = home_spread["price"]
+                    snapshot_data["handicap_price_away"] = away_spread["price"]
+                    logger.info(f"Data handicap ditemukan untuk match_id {match_db_id}.")
 
-            snapshot_schema = schemas.OddsSnapshotCreate(**odds_info)
+            snapshot_schema = schemas.OddsSnapshotCreate(**snapshot_data)
             crud.create_odds_snapshot(db, odds_snapshot=snapshot_schema, match_id=match_db_id)
-            logger.info(f"✅ Berhasil merekam odds (H2H & Spreads) untuk match_db_id: {match_db_id}")
+            logger.info(f"✅ Berhasil merekam odds untuk match_db_id: {match_db_id}")
         else:
             logger.warning(f"Market 'h2h' tidak ditemukan atau tidak lengkap untuk match api_id: {match.api_id}")
             
@@ -104,7 +109,7 @@ def record_odds_snapshot(match_db_id: int):
     finally:
         db.close()
 
-
+# ... (task discover_new_matches dan lainnya tidak perlu diubah) ...
 @celery.task
 def discover_new_matches():
     logger.warning("Mulai mencari pertandingan baru untuk HARI INI...")
@@ -131,7 +136,7 @@ def discover_new_matches():
 
                             new_match_schema = schemas.MatchCreate(
                                 api_id=match_data['id'], sport_key=match_data['sport_key'],
-                                sport_title=match_data.get('sport_title', league_key), # Fallback ke league_key
+                                sport_title=match_data.get('sport_title', league_key),
                                 home_team=match_data['home_team'], away_team=match_data['away_team'],
                                 commence_time=commence_time_utc
                             )
